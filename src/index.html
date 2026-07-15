@@ -472,23 +472,14 @@
             <h2 id="slip-form-title"><i data-lucide="file-plus" style="color:var(--accent);"></i> Create New Packing Slip</h2>
             <form id="slip-form" onsubmit="event.preventDefault(); savePackingSlip();">
               
-              <div class="grid-2">
-                <div class="field-group">
-                  <label for="slip-date">Invoice / Shipment Date</label>
-                  <input id="slip-date" type="date" required>
-                </div>
-                <div class="field-group">
-                  <label for="slip-invoice-quick">Quick Add Invoice Number <span class="text-muted" style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
-                  <input id="slip-invoice-quick" type="text" placeholder="Type then press Enter to add a chip" onkeydown="if(event.key==='Enter'||event.key===','){event.preventDefault(); if(addInvoiceNumberTag(this.value)){renderInvoiceNumberTags();} this.value='';}">
-                </div>
-              </div>
-
               <div class="field-group">
                 <label for="slip-client">Select Client *</label>
                 <select id="slip-client" required onchange="toggleNewClient()">
                   <option value="new">+ Add new client</option>
                 </select>
               </div>
+
+              <div style="height: 1.25rem;"></div>
 
               <!-- Nested Inline Form for creating a new client on the fly -->
               <div id="new-client-fields" class="card-sm-inset animate-fade-in" style="display:none;">
@@ -513,28 +504,31 @@
                 </div>
               </div>
 
-              <!-- Linkage Area for Orders & Invoice Numbers -->
+              <!-- Date + consolidated Invoice Numbers (chip panel lives here at the top) -->
               <div class="grid-2" style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
                 <div class="field-group">
-                  <label style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                    <span>Linked Orders</span>
-                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="openLinkOrderModal()" style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">+ Link Order</button>
-                  </label>
-                  <div id="linked-orders-tags" class="link-tag-container">
-                    <span class="text-muted" style="font-size:0.85rem; font-style:italic;">No orders linked</span>
-                  </div>
+                  <label for="slip-date">Invoice / Shipment Date</label>
+                  <input id="slip-date" type="date" required>
                 </div>
-
                 <div class="field-group">
-                  <label style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                    <span>Invoice Numbers</span>
-                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="openAddInvoiceNumberModal()" style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">+ Add Invoice Number</button>
-                  </label>
-                  <div id="slip-invoice-numbers-tags" class="link-tag-container">
-                    <span class="text-muted" style="font-size:0.85rem; font-style:italic;">No invoice numbers</span>
+                  <label for="slip-invoice-quick">Invoice Numbers <span class="text-muted" style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+                  <input id="slip-invoice-quick" type="text" placeholder="Type a number then press Enter (or ,) to add" onkeydown="if(event.key==='Enter'||event.key===','){event.preventDefault(); if(addInvoiceNumberTag(this.value)){renderInvoiceNumberTags();} this.value='';}">
+                  <div id="slip-invoice-numbers-tags" class="link-tag-container" style="margin-top: 0.5rem; min-height: 1.5rem;">
+                    <span class="text-muted" style="font-size:0.85rem; font-style:italic;">No invoice numbers yet</span>
                   </div>
-                  <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.35rem;">Optional. Free-floating invoice numbers can be added here without linking an order; linking an order will also pull its invoice numbers.</p>
                 </div>
+              </div>
+
+              <!-- Linked Orders strip -->
+              <div class="field-group" style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
+                <label style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                  <span>Linked Orders</span>
+                  <button type="button" class="btn btn-secondary-soft btn-xs" onclick="openLinkOrderModal()" style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">+ Link Order</button>
+                </label>
+                <div id="linked-orders-tags" class="link-tag-container">
+                  <span class="text-muted" style="font-size:0.85rem; font-style:italic;">No orders linked</span>
+                </div>
+                <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.35rem;">Invoice numbers on this slip sync into any linked order's invoice numbers automatically.</p>
               </div>
 
               <h2 style="margin: 2rem 0 1rem;"><i data-lucide="list" style="color:var(--accent);"></i> Package Contents</h2>

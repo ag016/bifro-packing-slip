@@ -1067,6 +1067,19 @@ function addInvoiceNumberTag(value) {
   if (!v) return false;
   if (invoiceNumbers.indexOf(v) !== -1) return false;
   invoiceNumbers.push(v);
+
+  // Mirror the new number onto any locally-cached linked orders so the
+  // Orders table reflects them without requiring a manual order edit.
+  // The user still has to press Save on the order form to persist;
+  // we are only keeping in-memory state in sync with the slip.
+  if (Array.isArray(linkedOrderIds) && linkedOrderIds.length && Array.isArray(orders)) {
+    linkedOrderIds.forEach(function (oid) {
+      var o = orders.find(function (x) { return x && x.id === oid; });
+      if (!o) return;
+      if (!Array.isArray(o.invoiceNumbers)) o.invoiceNumbers = [];
+      if (o.invoiceNumbers.indexOf(v) === -1) o.invoiceNumbers.push(v);
+    });
+  }
   return true; // caller is responsible for calling renderInvoiceNumberTags()
 }
 

@@ -374,7 +374,7 @@ function renderOrderSuggestions(list) {
     datalist.appendChild(opt);
     
     const chip = document.createElement('span');
-    chip.className = 'chip animate-scale-up';
+    chip.className = 'chip-suggestion animate-scale-up';
     chip.textContent = s;
     chip.onclick = () => {
       const rows = document.querySelectorAll('#order-items-container .item-row-four-cols');
