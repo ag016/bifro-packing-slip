@@ -24,7 +24,7 @@ function checkLicense() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheetId = ss.getId();
   var props = PropertiesService.getScriptProperties();
-  var licensedSheetsStr = props.getProperty('LICENSED_SHEETS');
+  var blockedSheetsStr = props.getProperty('BLOCKED_SHEETS');
   
   // Log license check attempts in script logs
   try {
@@ -35,13 +35,18 @@ function checkLicense() {
     Logger.log("License logging error: " + e.message);
   }
   
-  // If no licensed sheets list is set up in properties, default to active (prevents lockouts during setup)
-  if (licensedSheetsStr === null) {
+  // If the admin hasn't set up the blocked list yet, default to active (everyone runs free)
+  if (blockedSheetsStr === null || blockedSheetsStr.trim() === "") {
     return true;
   }
   
-  var licensedSheets = licensedSheetsStr.split(',').map(function(s) { return s.trim(); });
-  return licensedSheets.indexOf(sheetId) !== -1;
+  var blockedSheets = blockedSheetsStr.split(',').map(function(s) { return s.trim(); });
+  // If this Sheet ID is in the blocked list, access is denied
+  if (blockedSheets.indexOf(sheetId) !== -1) {
+    return false;
+  }
+  
+  return true;
 }
 
 function checkLicenseOrThrow() {
@@ -51,6 +56,15 @@ function checkLicenseOrThrow() {
 }
 
 function getLicenseExpiredHtml() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ownerEmail = 'Unknown';
+  try {
+    var owner = ss.getOwner();
+    if (owner) ownerEmail = owner.getEmail();
+  } catch (e) {
+    ownerEmail = 'Unknown';
+  }
+
   return HtmlService.createHtmlOutput(
     "<!DOCTYPE html><html><head><title>License Expired</title>" +
     "<meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
@@ -61,14 +75,15 @@ function getLicenseExpiredHtml() {
     "p { color: #94a3b8; font-size: 1rem; line-height: 1.6; margin: 0 0 24px 0; }" +
     ".contact-btn { display: inline-block; background-color: #f59e0b; color: #0f172a; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 0.95rem; transition: background-color 0.2s; }" +
     ".contact-btn:hover { background-color: #d97706; }" +
-    "span.meta { display: block; font-family: monospace; font-size: 0.75rem; color: #64748b; margin-top: 32px; word-break: break-all; }" +
+    "span.meta { display: block; font-family: monospace; font-size: 0.75rem; color: #64748b; margin-top: 16px; word-break: break-all; }" +
     "</style></head><body>" +
     "<div class='card'>" +
     "<h1>Bifro Packing Slip App</h1>" +
     "<h2>License Expired</h2>" +
     "<p>Your automatic updates subscription is inactive. To continue using the software, please contact us to reactivate your plan or request to have the self-contained, offline version installed on your sheet.</p>" +
     "<a href='mailto:support@bifro.com' class='contact-btn'>Contact Support</a>" +
-    "<span class='meta'>Sheet ID: " + SpreadsheetApp.getActiveSpreadsheet().getId() + "</span>" +
+    "<span class='meta' style='margin-top: 32px;'>Sheet ID: " + ss.getId() + "</span>" +
+    "<span class='meta'>Sheet Owner: " + ownerEmail + "</span>" +
     "</div></body></html>"
   ).setTitle("Bifro - License Expired");
 }
