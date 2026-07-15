@@ -26,7 +26,6 @@ jobs:
       # 4. Inject Google Credentials
       - name: Inject Clasp Auth Token
         run: |
-          mkdir -p ~/.clasprc.json
           echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
 
       # 5. Push code to Apps Script
