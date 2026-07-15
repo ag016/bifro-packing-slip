@@ -350,6 +350,7 @@ function doGet(e) {
 
   var settings = getSettingsSheetValues();
   var companyName = settings.CompanyName || 'Packing Slip Software';
+  var access = getUserAccess();
   var template = HtmlService.createTemplateFromFile('index');
   template.access = access;
   return template.evaluate()
