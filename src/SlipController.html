@@ -4,12 +4,14 @@
  * Form management, item grids, searching, filtering, and previewing
  */
 
-function addItemRow(name, qty, scrollToRow) {
+function addItemRow(name, qty, scrollToRow, orderId, invoiceId) {
   const container = $('#items-container');
   if (!container) return;
   
   const row = document.createElement('div');
   row.className = 'item-row card-sm-inset animate-fade-in';
+  row.dataset.orderId = orderId || '';
+  row.dataset.invoiceId = invoiceId || '';
   
   // Use unique timestamp to coordinate names and labels
   const id = 'item-' + Date.now() + '-' + Math.floor(Math.random()*1000);
@@ -17,11 +19,12 @@ function addItemRow(name, qty, scrollToRow) {
   row.innerHTML = `
     <div class="field-group flex-3">
       <label for="${id}-name" class="label-inline">Product Description</label>
-      <input type="text" id="${id}-name" class="item-name" placeholder="Start typing product name..." value="${escapeHtml(name || '')}" list="suggestions-list" required>
+      <input type="text" id="${id}-name" class="item-name" placeholder="Start typing product name..." value="${escapeHtml(name || '')}" list="suggestions-list" oninput="updateRowBalanceHint('${id}')" required>
+      <div id="${id}-balance-container" class="item-balance-hint"></div>
     </div>
     <div class="field-group flex-1">
       <label for="${id}-qty" class="label-inline">Quantity</label>
-      <input type="number" id="${id}-qty" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty || 1}" required>
+      <input type="number" id="${id}-qty" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty || 1}" oninput="updateRowBalanceHint('${id}')" required>
     </div>
     <div class="btn-delete-container">
       <button type="button" class="btn-icon btn-danger-soft" onclick="removeItemRow(this)" title="Remove Item">
@@ -32,6 +35,10 @@ function addItemRow(name, qty, scrollToRow) {
   
   container.appendChild(row);
   if (window.lucide) lucide.createIcons();
+  
+  if (orderId || invoiceId) {
+    updateRowBalanceHint(id);
+  }
   
   if (scrollToRow !== false) {
     setTimeout(() => {
@@ -177,7 +184,9 @@ function gatherItems() {
     }
     
     row.dataset.removeBlank = 'false';
-    items.push({ name, quantity });
+    const orderId = row.dataset.orderId || '';
+    const invoiceId = row.dataset.invoiceId || '';
+    items.push({ name, quantity, orderId, invoiceId });
   });
   
   // Remove blank rows from the DOM
@@ -255,7 +264,9 @@ function savePackingSlip() {
     clientAddress: client.address || '',
     items: items,
     notes: slipNotes,
-    invoiceNumber: slipInvoice
+    invoiceNumber: slipInvoice,
+    linkedOrders: linkedOrderIds,
+    linkedInvoices: linkedInvoiceIds
   };
   
   if (currentSlip && currentSlip.slipCode) {
@@ -348,6 +359,12 @@ function resetSlipForm() {
   toggleNewClient();
   currentSlip = null;
   
+  // Clear linkage data
+  linkedOrderIds = [];
+  linkedInvoiceIds = [];
+  currentLinkedStats = {};
+  renderLinkedTags();
+  
   const printBtn = $('#btn-print-slip');
   if (printBtn) printBtn.style.display = 'none';
   
@@ -378,12 +395,19 @@ function loadSlipForEdit(slipCode) {
   }
   $('#slip-notes').value = slip.notes || '';
   
-  $('#items-container').innerHTML = '';
-  if (slip.items && slip.items.length) {
-    slip.items.forEach(it => addItemRow(it.name, it.quantity));
-  } else {
-    addItemRow('', 1);
-  }
+  // Load Linked Documents
+  linkedOrderIds = (slip.linkedOrders || '').split(',').map(s => s.trim()).filter(Boolean);
+  linkedInvoiceIds = (slip.linkedInvoices || '').split(',').map(s => s.trim()).filter(Boolean);
+  renderLinkedTags();
+  
+  refreshLinkedStats(() => {
+    $('#items-container').innerHTML = '';
+    if (slip.items && slip.items.length) {
+      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId, it.invoiceId));
+    } else {
+      addItemRow('', 1, false);
+    }
+  });
   
   loadSuggestions(slip.clientId);
   $('#slip-form-title').textContent = 'Edit Packing Slip (Updates #' + slip.slipCode + ')';
@@ -416,13 +440,20 @@ function duplicateSlipByCode(slipCode) {
     if (slip.clientAddress !== undefined) $('#new-client-address').value = slip.clientAddress || '';
   }
   $('#slip-notes').value = slip.notes || '';
+
+  // Load Linked Documents for Duplicate Copy
+  linkedOrderIds = (slip.linkedOrders || '').split(',').map(s => s.trim()).filter(Boolean);
+  linkedInvoiceIds = (slip.linkedInvoices || '').split(',').map(s => s.trim()).filter(Boolean);
+  renderLinkedTags();
   
-  $('#items-container').innerHTML = '';
-  if (slip.items && slip.items.length) {
-    slip.items.forEach(it => addItemRow(it.name, it.quantity));
-  } else {
-    addItemRow('', 1);
-  }
+  refreshLinkedStats(() => {
+    $('#items-container').innerHTML = '';
+    if (slip.items && slip.items.length) {
+      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId, it.invoiceId));
+    } else {
+      addItemRow('', 1, false);
+    }
+  });
   
   loadSuggestions(slip.clientId);
   $('#slip-form-title').textContent = 'New Packing Slip (Duplicated from #' + slip.slipCode + ')';
@@ -518,6 +549,29 @@ function renderSlips() {
   
   if (to) {
     filtered = filtered.filter(s => s.date <= to);
+  }
+
+  const orderFilter = $('#filter-order') ? $('#filter-order').value.trim().toLowerCase() : '';
+  const invoiceNumFilter = $('#filter-invoice-num') ? $('#filter-invoice-num').value.trim().toLowerCase() : '';
+
+  if (orderFilter) {
+    filtered = filtered.filter(s => {
+      var ordersStr = String(s.linkedOrders || '').toLowerCase();
+      var itemsMatch = (s.items || []).some(function(it) {
+        return String(it.orderId || '').toLowerCase().indexOf(orderFilter) !== -1;
+      });
+      return ordersStr.indexOf(orderFilter) !== -1 || itemsMatch;
+    });
+  }
+
+  if (invoiceNumFilter) {
+    filtered = filtered.filter(s => {
+      var invoicesStr = String(s.linkedInvoices || '').toLowerCase();
+      var itemsMatch = (s.items || []).some(function(it) {
+        return String(it.invoiceId || '').toLowerCase().indexOf(invoiceNumFilter) !== -1;
+      });
+      return invoicesStr.indexOf(invoiceNumFilter) !== -1 || itemsMatch;
+    });
   }
   
   const cardsContainer = $('#slips-cards-container');
@@ -913,4 +967,518 @@ document.addEventListener('click', function(event) {
     });
   }
 });
+
+/* ------------------------------------------------------------------
+ * Orders & Invoices Linking Logic
+ * ------------------------------------------------------------------ */
+
+let linkedOrderIds = [];
+let linkedInvoiceIds = [];
+let currentLinkedStats = {};
+
+function renderLinkedTags() {
+  const oContainer = $('#linked-orders-tags');
+  if (oContainer) {
+    if (!linkedOrderIds.length) {
+      oContainer.innerHTML = '<span class="text-muted" style="font-size:0.85rem; font-style:italic;">No orders linked</span>';
+    } else {
+      oContainer.innerHTML = '';
+      linkedOrderIds.forEach(id => {
+        const tag = document.createElement('span');
+        tag.className = 'link-tag';
+        tag.innerHTML = `${escapeHtml(id)} <button type="button" onclick="unlinkOrder('${id}')" title="Unlink Order">&times;</button>`;
+        oContainer.appendChild(tag);
+      });
+    }
+  }
+
+  const iContainer = $('#linked-invoices-tags');
+  if (iContainer) {
+    if (!linkedInvoiceIds.length) {
+      iContainer.innerHTML = '<span class="text-muted" style="font-size:0.85rem; font-style:italic;">No invoices linked</span>';
+    } else {
+      iContainer.innerHTML = '';
+      linkedInvoiceIds.forEach(id => {
+        const tag = document.createElement('span');
+        tag.className = 'link-tag';
+        tag.innerHTML = `${escapeHtml(id)} <button type="button" onclick="unlinkInvoice('${id}')" title="Unlink Invoice">&times;</button>`;
+        iContainer.appendChild(tag);
+      });
+    }
+  }
+}
+
+function refreshLinkedStats(callback) {
+  const clientId = $('#slip-client').value;
+  if (!clientId || clientId === 'new' || (!linkedOrderIds.length && !linkedInvoiceIds.length)) {
+    currentLinkedStats = {};
+    updateAllRowBalanceHints();
+    if (typeof callback === 'function') callback();
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(stats => {
+      currentLinkedStats = stats || {};
+      updateAllRowBalanceHints();
+      if (typeof callback === 'function') callback();
+    })
+    .withFailureHandler(handleError)
+    .getLinkedDeliveryStats(clientId, linkedOrderIds, linkedInvoiceIds);
+}
+
+function updateAllRowBalanceHints() {
+  const rows = $$('#items-container .item-row');
+  rows.forEach(row => {
+    const nameEl = row.querySelector('.item-name');
+    if (nameEl && nameEl.id) {
+      const id = nameEl.id.replace('-name', '');
+      updateRowBalanceHint(id);
+    }
+  });
+}
+
+function updateRowBalanceHint(id) {
+  const nameEl = document.getElementById(id + '-name');
+  const qtyEl = document.getElementById(id + '-qty');
+  const container = document.getElementById(id + '-balance-container');
+  
+  if (!nameEl || !qtyEl || !container) return;
+  container.innerHTML = '';
+  
+  const name = nameEl.value.trim();
+  const qty = parseInt(qtyEl.value, 10) || 0;
+  const row = nameEl.closest('.item-row');
+  
+  const oId = row.dataset.orderId;
+  const invId = row.dataset.invoiceId;
+  
+  if (!oId && !invId) return; // Not linked
+
+  const stat = currentLinkedStats[name];
+  if (!stat) {
+    container.innerHTML = '<span style="color:var(--text-muted); font-size:0.75rem;">Not in linked Order/Invoice items</span>';
+    return;
+  }
+
+  const ordered = stat.ordered || stat.invoiced || 0;
+  const prevDelivered = stat.delivered || 0;
+  const totalDelivered = prevDelivered + qty;
+
+  let labelText = '';
+  let badgeClass = 'badge-secondary';
+
+  if (totalDelivered === ordered) {
+    labelText = 'Fully Delivered';
+    badgeClass = 'badge-success';
+  } else if (totalDelivered < ordered) {
+    labelText = 'Partially Delivered (' + (ordered - totalDelivered) + ' remaining)';
+    badgeClass = 'badge-warning';
+  } else {
+    labelText = 'Over-delivered by ' + (totalDelivered - ordered);
+    badgeClass = 'badge-danger';
+  }
+
+  container.innerHTML = `
+    <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.25rem;">
+      <span class="badge ${badgeClass}" style="padding:1px 4px; font-size:0.7rem; border-radius:4px;">${labelText}</span>
+      <span style="font-size:0.75rem; color:var(--text-muted);">
+        Ordered: <strong>${ordered}</strong> | Prev: <strong>${prevDelivered}</strong>
+      </span>
+    </div>
+  `;
+}
+
+// Modal links controllers
+function openLinkOrderModal() {
+  const clientId = $('#slip-client').value;
+  if (!clientId || clientId === 'new') {
+    toast('Please select a registered client first.', 'warning');
+    return;
+  }
+  
+  $('#link-order-modal').classList.add('active');
+  toggleLinkOrderCreateForm(false);
+  
+  // List client's orders
+  const tbody = $('#link-order-table tbody');
+  tbody.innerHTML = '<tr><td colspan="4" class="empty">Loading orders...</td></tr>';
+  
+  google.script.run
+    .withSuccessHandler(list => {
+      orders = list || [];
+      const clientOrders = orders.filter(o => o.clientId === clientId && linkedOrderIds.indexOf(o.id) === -1);
+      
+      tbody.innerHTML = '';
+      if (!clientOrders.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty">No unlinked orders found for this client.</td></tr>';
+        return;
+      }
+      
+      clientOrders.forEach(o => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="padding: 0.5rem 0.25rem;"><strong>${escapeHtml(o.id)}</strong></td>
+          <td style="padding: 0.5rem 0.25rem;">${formatDate(o.date)}</td>
+          <td style="padding: 0.5rem 0.25rem;"><span class="badge">${escapeHtml(o.status)}</span></td>
+          <td style="padding: 0.5rem 0.25rem; text-align: right;">
+            <button type="button" class="btn btn-primary btn-xs" onclick="linkOrder('${o.id}')">Link</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    })
+    .withFailureHandler(handleError)
+    .getOrders();
+}
+
+function closeLinkOrderModal() {
+  $('#link-order-modal').classList.remove('active');
+}
+
+function openLinkInvoiceModal() {
+  const clientId = $('#slip-client').value;
+  if (!clientId || clientId === 'new') {
+    toast('Please select a registered client first.', 'warning');
+    return;
+  }
+  
+  $('#link-invoice-modal').classList.add('active');
+  toggleLinkInvoiceCreateForm(false);
+  
+  // List client's invoices
+  const tbody = $('#link-invoice-table tbody');
+  tbody.innerHTML = '<tr><td colspan="4" class="empty">Loading invoices...</td></tr>';
+  
+  google.script.run
+    .withSuccessHandler(list => {
+      invoices = list || [];
+      const clientInvoices = invoices.filter(inv => inv.clientId === clientId && linkedInvoiceIds.indexOf(inv.id) === -1);
+      
+      tbody.innerHTML = '';
+      if (!clientInvoices.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty">No unlinked invoices found for this client.</td></tr>';
+        return;
+      }
+      
+      clientInvoices.forEach(inv => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="padding: 0.5rem 0.25rem;"><strong>${escapeHtml(inv.id)}</strong></td>
+          <td style="padding: 0.5rem 0.25rem;">${formatDate(inv.date)}</td>
+          <td style="padding: 0.5rem 0.25rem;"><span class="badge">${escapeHtml(inv.status)}</span></td>
+          <td style="padding: 0.5rem 0.25rem; text-align: right;">
+            <button type="button" class="btn btn-primary btn-xs" onclick="linkInvoice('${inv.id}')">Link</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    })
+    .withFailureHandler(handleError)
+    .getInvoices();
+}
+
+function closeLinkInvoiceModal() {
+  $('#link-invoice-modal').classList.remove('active');
+}
+
+function toggleLinkOrderCreateForm(show) {
+  $('#link-order-list-section').style.display = show ? 'none' : 'block';
+  $('#link-order-create-section').style.display = show ? 'block' : 'none';
+  if (show) {
+    $('#link-order-date').valueAsDate = new Date();
+    $('#link-order-items-container').innerHTML = '';
+    addLinkOrderItemRow('', 1);
+  }
+}
+
+function toggleLinkInvoiceCreateForm(show) {
+  $('#link-invoice-list-section').style.display = show ? 'none' : 'block';
+  $('#link-invoice-create-section').style.display = show ? 'block' : 'none';
+  if (show) {
+    $('#link-invoice-date').valueAsDate = new Date();
+    $('#link-invoice-items-container').innerHTML = '';
+    addLinkInvoiceItemRow('', 1, 0);
+  }
+}
+
+// Inline rows creation inside modals
+function addLinkOrderItemRow(name, qty) {
+  const container = $('#link-order-items-container');
+  if (!container) return;
+  const row = document.createElement('div');
+  row.className = 'item-row card-sm-inset';
+  row.style.padding = '0.5rem';
+  row.style.marginBottom = '0.5rem';
+  row.innerHTML = `
+    <input type="text" class="item-name" placeholder="Item name..." value="${escapeHtml(name)}" style="flex:2; padding:0.25rem;" required>
+    <input type="number" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty}" style="flex:1; padding:0.25rem;" required>
+    <button type="button" class="btn-icon btn-danger-soft" onclick="this.closest('.item-row').remove()" style="padding:0.25rem;"><i data-lucide="trash-2" style="width:12px; height:12px;"></i></button>
+  `;
+  container.appendChild(row);
+  if (window.lucide) lucide.createIcons();
+}
+
+function addLinkInvoiceItemRow(name, qty, price) {
+  const container = $('#link-invoice-items-container');
+  if (!container) return;
+  const row = document.createElement('div');
+  row.className = 'item-row card-sm-inset';
+  row.style.padding = '0.5rem';
+  row.style.marginBottom = '0.5rem';
+  row.innerHTML = `
+    <input type="text" class="item-name" placeholder="Item name..." value="${escapeHtml(name)}" style="flex:2; padding:0.25rem;" required>
+    <input type="number" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty}" style="flex:1; padding:0.25rem;" required>
+    <input type="number" class="item-price" placeholder="Price" min="0" step="0.01" value="${price}" style="flex:1; padding:0.25rem;" required>
+    <button type="button" class="btn-icon btn-danger-soft" onclick="this.closest('.item-row').remove()" style="padding:0.25rem;"><i data-lucide="trash-2" style="width:12px; height:12px;"></i></button>
+  `;
+  container.appendChild(row);
+  if (window.lucide) lucide.createIcons();
+}
+
+// Link commands
+function linkOrder(orderId) {
+  if (linkedOrderIds.indexOf(orderId) !== -1) return;
+  linkedOrderIds.push(orderId);
+  renderLinkedTags();
+  
+  // Pull items of the linked order
+  google.script.run
+    .withSuccessHandler(list => {
+      orders = list || [];
+      const order = orders.find(o => o.id === orderId);
+      if (order && order.items) {
+        // If items-container has only 1 blank row, clear it
+        const rows = $$('#items-container .item-row');
+        if (rows.length === 1) {
+          const name = rows[0].querySelector('.item-name').value.trim();
+          if (!name) rows[0].remove();
+        }
+
+        // Pull active packing slips to calculate remaining balances
+        google.script.run
+          .withSuccessHandler(slipsList => {
+            slips = slipsList || [];
+            order.items.forEach(item => {
+              const itemName = String(item.name || '').trim();
+              const ordered = Number(item.quantity || 0);
+              let delivered = 0;
+              slips.forEach(s => {
+                if (s.slipCode.indexOf('-rev') === -1) {
+                  (s.items || []).forEach(it => {
+                    if (String(it.name || '').trim() === itemName && it.orderId === orderId) {
+                      delivered += Number(it.quantity || 0);
+                    }
+                  });
+                }
+              });
+              const remaining = Math.max(0, ordered - delivered);
+              if (remaining > 0 || delivered === 0) {
+                addItemRow(item.name, remaining, false, orderId, '');
+              }
+            });
+            refreshLinkedStats();
+            closeLinkOrderModal();
+          })
+          .getPackingSlips();
+      } else {
+        refreshLinkedStats();
+        closeLinkOrderModal();
+      }
+    })
+    .getOrders();
+}
+
+function unlinkOrder(orderId) {
+  linkedOrderIds = linkedOrderIds.filter(id => id !== orderId);
+  renderLinkedTags();
+  
+  // Remove items in items-container belonging to this orderId
+  const rows = $$('#items-container .item-row');
+  rows.forEach(row => {
+    if (row.dataset.orderId === orderId) {
+      row.remove();
+    }
+  });
+  
+  // If container became empty, add one blank row
+  if ($$('#items-container .item-row').length === 0) {
+    addItemRow('', 1, false);
+  }
+  
+  refreshLinkedStats();
+}
+
+function linkInvoice(invoiceId) {
+  if (linkedInvoiceIds.indexOf(invoiceId) !== -1) return;
+  linkedInvoiceIds.push(invoiceId);
+  renderLinkedTags();
+
+  // Pull items of the linked invoice
+  google.script.run
+    .withSuccessHandler(list => {
+      invoices = list || [];
+      const invoice = invoices.find(inv => inv.id === invoiceId);
+      if (invoice && invoice.items) {
+        const rows = $$('#items-container .item-row');
+        if (rows.length === 1) {
+          const name = rows[0].querySelector('.item-name').value.trim();
+          if (!name) rows[0].remove();
+        }
+
+        // Pull active slips to check remaining balances
+        google.script.run
+          .withSuccessHandler(slipsList => {
+            slips = slipsList || [];
+            invoice.items.forEach(item => {
+              const itemName = String(item.name || '').trim();
+              const ordered = Number(item.quantity || 0);
+              let delivered = 0;
+              slips.forEach(s => {
+                if (s.slipCode.indexOf('-rev') === -1) {
+                  (s.items || []).forEach(it => {
+                    if (String(it.name || '').trim() === itemName && it.invoiceId === invoiceId) {
+                      delivered += Number(it.quantity || 0);
+                    }
+                  });
+                }
+              });
+              const remaining = Math.max(0, ordered - delivered);
+              if (remaining > 0 || delivered === 0) {
+                addItemRow(item.name, remaining, false, '', invoiceId);
+              }
+            });
+            refreshLinkedStats();
+            closeLinkInvoiceModal();
+          })
+          .getPackingSlips();
+      } else {
+        refreshLinkedStats();
+        closeLinkInvoiceModal();
+      }
+    })
+    .getInvoices();
+}
+
+function unlinkInvoice(invoiceId) {
+  linkedInvoiceIds = linkedInvoiceIds.filter(id => id !== invoiceId);
+  renderLinkedTags();
+  
+  // Remove items in items-container belonging to this invoiceId
+  const rows = $$('#items-container .item-row');
+  rows.forEach(row => {
+    if (row.dataset.invoiceId === invoiceId) {
+      row.remove();
+    }
+  });
+  
+  // If container became empty, add one blank row
+  if ($$('#items-container .item-row').length === 0) {
+    addItemRow('', 1, false);
+  }
+  
+  refreshLinkedStats();
+}
+
+// On-the-fly savers
+function saveLinkOrderOnTheFly() {
+  const clientId = $('#slip-client').value;
+  const date = $('#link-order-date').value;
+  
+  if (!clientId || clientId === 'new') return;
+  const clientObj = clients.find(c => c.id === clientId);
+  if (!clientObj) return;
+
+  const rows = $$('#link-order-create-section .item-row');
+  const items = [];
+  let valid = true;
+
+  rows.forEach((row, idx) => {
+    const name = row.querySelector('.item-name').value.trim();
+    const qty = parseInt(row.querySelector('.item-qty').value, 10);
+    if (!name) {
+      toast(`Row ${idx + 1}: Description is required.`, 'danger');
+      valid = false;
+      return;
+    }
+    if (isNaN(qty) || qty <= 0) {
+      toast(`Row ${idx + 1}: Quantity must be a valid positive integer.`, 'danger');
+      valid = false;
+      return;
+    }
+    items.push({ name, quantity: qty });
+  });
+
+  if (!valid) return;
+
+  const order = {
+    date: date || new Date().toISOString().substring(0, 10),
+    clientId: clientId,
+    clientName: clientObj.name,
+    items: items,
+    status: 'Pending'
+  };
+
+  google.script.run
+    .withSuccessHandler(saved => {
+      toast('Order created and linked: ' + saved.id, 'success');
+      linkOrder(saved.id);
+    })
+    .withFailureHandler(handleError)
+    .saveOrder(order);
+}
+
+function saveLinkInvoiceOnTheFly() {
+  const clientId = $('#slip-client').value;
+  const date = $('#link-invoice-date').value;
+  
+  if (!clientId || clientId === 'new') return;
+  const clientObj = clients.find(c => c.id === clientId);
+  if (!clientObj) return;
+
+  const rows = $$('#link-invoice-create-section .item-row');
+  const items = [];
+  let valid = true;
+
+  rows.forEach((row, idx) => {
+    const name = row.querySelector('.item-name').value.trim();
+    const qty = parseInt(row.querySelector('.item-qty').value, 10);
+    const price = parseFloat(row.querySelector('.item-price').value);
+    
+    if (!name) {
+      toast(`Row ${idx + 1}: Description is required.`, 'danger');
+      valid = false;
+      return;
+    }
+    if (isNaN(qty) || qty <= 0) {
+      toast(`Row ${idx + 1}: Quantity must be a valid positive integer.`, 'danger');
+      valid = false;
+      return;
+    }
+    if (isNaN(price) || price < 0) {
+      toast(`Row ${idx + 1}: Price must be a non-negative number.`, 'danger');
+      valid = false;
+      return;
+    }
+    items.push({ name, quantity: qty, unitPrice: price });
+  });
+
+  if (!valid) return;
+
+  const invoice = {
+    date: date || new Date().toISOString().substring(0, 10),
+    clientId: clientId,
+    clientName: clientObj.name,
+    items: items,
+    status: 'Unpaid'
+  };
+
+  google.script.run
+    .withSuccessHandler(saved => {
+      toast('Invoice created and linked: ' + saved.id, 'success');
+      linkInvoice(saved.id);
+    })
+    .withFailureHandler(handleError)
+    .saveInvoice(invoice);
+}
 </script>

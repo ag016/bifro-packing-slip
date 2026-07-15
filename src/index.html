@@ -78,6 +78,12 @@
         <button id="sidebar-btn-clients" class="sidebar-link" onclick="showPage('clients')">
           <i data-lucide="users"></i> Clients
         </button>
+        <button id="sidebar-btn-orders" class="sidebar-link" onclick="showPage('orders')">
+          <i data-lucide="shopping-bag"></i> Orders
+        </button>
+        <button id="sidebar-btn-invoices" class="sidebar-link" onclick="showPage('invoices')">
+          <i data-lucide="file-text"></i> Invoices
+        </button>
         <button id="sidebar-btn-new-slip" class="sidebar-link" onclick="showPage('new-slip')">
           <i data-lucide="plus-circle"></i> New Packing Slip
         </button>
@@ -129,6 +135,12 @@
         </button>
         <button class="mobile-menu-item" onclick="navigateMobile('clients')">
           <i data-lucide="users"></i> Clients
+        </button>
+        <button class="mobile-menu-item" onclick="navigateMobile('orders')">
+          <i data-lucide="shopping-bag"></i> Orders
+        </button>
+        <button class="mobile-menu-item" onclick="navigateMobile('invoices')">
+          <i data-lucide="file-text"></i> Invoices
         </button>
         <button class="mobile-menu-item" onclick="navigateMobile('new-slip')">
           <i data-lucide="plus-circle"></i> New Packing Slip
@@ -383,6 +395,149 @@
           </div>
         </section>
 
+        <!-- Tab Page: Orders -->
+        <section id="orders" class="page" style="display:none;">
+          <div class="card">
+            <h2 id="order-form-title"><i data-lucide="shopping-cart" style="color:var(--accent);"></i> Register New Order</h2>
+            <form id="order-form" onsubmit="event.preventDefault(); saveOrderSubmit();">
+              <input type="hidden" id="order-edit-id" value="">
+              <div class="grid-2">
+                <div class="field-group">
+                  <label for="order-client">Select Client *</label>
+                  <select id="order-client" required>
+                    <option value="">-- Choose Client --</option>
+                  </select>
+                </div>
+                <div class="field-group">
+                  <label for="order-date">Order Date *</label>
+                  <input id="order-date" type="date" required>
+                </div>
+              </div>
+
+              <h3 style="margin: 1.5rem 0 0.75rem; display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="list" style="width:16px;height:16px;"></i> Order Items</h3>
+              <div id="order-items-container"></div>
+              <div style="margin: 1rem 0 1.5rem;">
+                <button type="button" class="btn btn-secondary-soft btn-sm" onclick="addOrderItemRow('', 1)">
+                  <i data-lucide="plus"></i> Add Item Row
+                </button>
+              </div>
+
+              <div class="grid-2">
+                <div class="field-group">
+                  <label for="order-status">Order Status</label>
+                  <select id="order-status">
+                    <option value="Pending">Pending</option>
+                    <option value="Partially Delivered">Partially Delivered</option>
+                    <option value="Completed">Completed</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="actions" style="margin-top:1.5rem;">
+                <button type="submit" class="btn btn-primary btn-md" id="btn-save-order">
+                  <i data-lucide="plus-circle"></i> Save Order Details
+                </button>
+                <button type="button" class="btn btn-secondary btn-md" id="btn-cancel-order-edit" style="display:none;" onclick="cancelOrderEdit()">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card">
+            <h2><i data-lucide="shopping-bag" style="color:var(--accent);"></i> Order Directory</h2>
+            <div class="table-responsive">
+              <table id="orders-table">
+                <thead>
+                  <tr>
+                    <th>Order ID</th>
+                    <th>Date</th>
+                    <th>Client Name</th>
+                    <th>Items Count</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="6" class="empty">Loading orders...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tab Page: Invoices -->
+        <section id="invoices" class="page" style="display:none;">
+          <div class="card">
+            <h2 id="invoice-form-title"><i data-lucide="file-plus-2" style="color:var(--accent);"></i> Create New Invoice</h2>
+            <form id="invoice-form" onsubmit="event.preventDefault(); saveInvoiceSubmit();">
+              <input type="hidden" id="invoice-edit-id" value="">
+              <div class="grid-2">
+                <div class="field-group">
+                  <label for="invoice-client">Select Client *</label>
+                  <select id="invoice-client" required>
+                    <option value="">-- Choose Client --</option>
+                  </select>
+                </div>
+                <div class="field-group">
+                  <label for="invoice-date">Invoice Date *</label>
+                  <input id="invoice-date" type="date" required>
+                </div>
+              </div>
+
+              <h3 style="margin: 1.5rem 0 0.75rem; display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="list" style="width:16px;height:16px;"></i> Invoice Items</h3>
+              <div id="invoice-items-container"></div>
+              <div style="margin: 1rem 0 1.5rem;">
+                <button type="button" class="btn btn-secondary-soft btn-sm" onclick="addInvoiceItemRow('', 1, 0)">
+                  <i data-lucide="plus"></i> Add Item Row
+                </button>
+              </div>
+
+              <div class="grid-2">
+                <div class="field-group">
+                  <label for="invoice-status">Invoice Status</label>
+                  <select id="invoice-status">
+                    <option value="Unpaid">Unpaid</option>
+                    <option value="Paid">Paid</option>
+                    <option value="Partially Delivered">Partially Delivered</option>
+                    <option value="Completed">Completed</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="actions" style="margin-top:1.5rem;">
+                <button type="submit" class="btn btn-primary btn-md" id="btn-save-invoice">
+                  <i data-lucide="plus-circle"></i> Save Invoice Details
+                </button>
+                <button type="button" class="btn btn-secondary btn-md" id="btn-cancel-invoice-edit" style="display:none;" onclick="cancelInvoiceEdit()">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card">
+            <h2><i data-lucide="file-text" style="color:var(--accent);"></i> Invoice Directory</h2>
+            <div class="table-responsive">
+              <table id="invoices-table">
+                <thead>
+                  <tr>
+                    <th>Invoice ID</th>
+                    <th>Date</th>
+                    <th>Client Name</th>
+                    <th>Items Count</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="6" class="empty">Loading invoices...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <!-- Tab Page: New Packing Slip -->
         <section id="new-slip" class="page">
           <div class="card">
@@ -427,6 +582,29 @@
                 <div class="field-group" style="margin-top: 0.85rem;">
                   <label for="new-client-address" class="label-inline">Shipment Address</label>
                   <textarea id="new-client-address" placeholder="Address street, city, state, zip..."></textarea>
+                </div>
+              </div>
+
+              <!-- Linkage Area for Orders & Invoices -->
+              <div class="grid-2" style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
+                <div class="field-group">
+                  <label style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <span>Linked Orders</span>
+                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="openLinkOrderModal()" style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">+ Link Order</button>
+                  </label>
+                  <div id="linked-orders-tags" class="link-tag-container">
+                    <span class="text-muted" style="font-size:0.85rem; font-style:italic;">No orders linked</span>
+                  </div>
+                </div>
+
+                <div class="field-group">
+                  <label style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <span>Linked Invoices</span>
+                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="openLinkInvoiceModal()" style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">+ Link Invoice</button>
+                  </label>
+                  <div id="linked-invoices-tags" class="link-tag-container">
+                    <span class="text-muted" style="font-size:0.85rem; font-style:italic;">No invoices linked</span>
+                  </div>
                 </div>
               </div>
 
@@ -490,6 +668,14 @@
               <div class="field-group">
                 <label for="filter-to">To Date</label>
                 <input id="filter-to" type="date">
+              </div>
+              <div class="field-group">
+                <label for="filter-order">Order Number</label>
+                <input id="filter-order" type="text" placeholder="e.g. OR-0001">
+              </div>
+              <div class="field-group">
+                <label for="filter-invoice-num">Invoice Number</label>
+                <input id="filter-invoice-num" type="text" placeholder="e.g. INV-0001">
               </div>
             </div>
             
@@ -605,6 +791,110 @@
       </div>
     </div>
 
+    <!-- Link Order Modal -->
+    <div id="link-order-modal" class="modal" onclick="if(event.target===this) closeLinkOrderModal()">
+      <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+          <h3 style="display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="shopping-cart" style="color: var(--accent); width: 20px; height: 20px;"></i> Link Orders</h3>
+          <button class="modal-close-btn" onclick="closeLinkOrderModal()">&times;</button>
+        </div>
+        <div id="link-order-modal-body" style="padding: 1.5rem;">
+          <!-- List of orders for client -->
+          <div id="link-order-list-section">
+            <h4 style="margin-top:0;">Available Orders for Selected Client:</h4>
+            <div style="max-height: 200px; overflow-y: auto; margin-bottom: 1rem; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.5rem;" id="link-order-table-container">
+              <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;" id="link-order-table">
+                <thead>
+                  <tr style="border-bottom: 1px solid var(--border); text-align: left;">
+                    <th style="padding: 0.5rem 0.25rem;">Order ID</th>
+                    <th style="padding: 0.5rem 0.25rem;">Date</th>
+                    <th style="padding: 0.5rem 0.25rem;">Status</th>
+                    <th style="padding: 0.5rem 0.25rem; text-align: right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="4" class="empty" style="text-align: center; padding: 1rem;">Select a client on the form first.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <button type="button" class="btn btn-secondary-soft btn-sm btn-full" onclick="toggleLinkOrderCreateForm(true)">
+              <i data-lucide="plus"></i> Create Order on-the-fly
+            </button>
+          </div>
+
+          <!-- Create order inline form -->
+          <div id="link-order-create-section" style="display: none; border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
+            <h4 style="margin-top: 0;">Create New Order on-the-fly</h4>
+            <div class="field-group" style="margin-bottom: 0.75rem;">
+              <label for="link-order-date" class="label-inline">Order Date *</label>
+              <input type="date" id="link-order-date" style="width:100%;">
+            </div>
+            
+            <h5 style="margin: 1rem 0 0.5rem;">Order Items</h5>
+            <div id="link-order-items-container"></div>
+            <button type="button" class="btn btn-secondary-soft btn-xs" onclick="addLinkOrderItemRow('', 1)" style="margin-top: 0.5rem;">+ Add Item Row</button>
+            
+            <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem; justify-content: flex-end;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="toggleLinkOrderCreateForm(false)">Back</button>
+              <button type="button" class="btn btn-primary btn-sm" onclick="saveLinkOrderOnTheFly()"><i data-lucide="save"></i> Save & Link Order</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Link Invoice Modal -->
+    <div id="link-invoice-modal" class="modal" onclick="if(event.target===this) closeLinkInvoiceModal()">
+      <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+          <h3 style="display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="file-text" style="color: var(--accent); width: 20px; height: 20px;"></i> Link Invoices</h3>
+          <button class="modal-close-btn" onclick="closeLinkInvoiceModal()">&times;</button>
+        </div>
+        <div id="link-invoice-modal-body" style="padding: 1.5rem;">
+          <!-- List of invoices for client -->
+          <div id="link-invoice-list-section">
+            <h4 style="margin-top:0;">Available Invoices for Selected Client:</h4>
+            <div style="max-height: 200px; overflow-y: auto; margin-bottom: 1rem; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.5rem;" id="link-invoice-table-container">
+              <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;" id="link-invoice-table">
+                <thead>
+                  <tr style="border-bottom: 1px solid var(--border); text-align: left;">
+                    <th style="padding: 0.5rem 0.25rem;">Invoice ID</th>
+                    <th style="padding: 0.5rem 0.25rem;">Date</th>
+                    <th style="padding: 0.5rem 0.25rem;">Status</th>
+                    <th style="padding: 0.5rem 0.25rem; text-align: right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="4" class="empty" style="text-align: center; padding: 1rem;">Select a client on the form first.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <button type="button" class="btn btn-secondary-soft btn-sm btn-full" onclick="toggleLinkInvoiceCreateForm(true)">
+              <i data-lucide="plus"></i> Create Invoice on-the-fly
+            </button>
+          </div>
+
+          <!-- Create invoice inline form -->
+          <div id="link-invoice-create-section" style="display: none; border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
+            <h4 style="margin-top: 0;">Create New Invoice on-the-fly</h4>
+            <div class="field-group" style="margin-bottom: 0.75rem;">
+              <label for="link-invoice-date" class="label-inline">Invoice Date *</label>
+              <input type="date" id="link-invoice-date" style="width:100%;">
+            </div>
+            
+            <h5 style="margin: 1rem 0 0.5rem;">Invoice Items</h5>
+            <div id="link-invoice-items-container"></div>
+            <button type="button" class="btn btn-secondary-soft btn-xs" onclick="addLinkInvoiceItemRow('', 1, 0)" style="margin-top: 0.5rem;">+ Add Item Row</button>
+            
+            <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem; justify-content: flex-end;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="toggleLinkInvoiceCreateForm(false)">Back</button>
+              <button type="button" class="btn btn-primary btn-sm" onclick="saveLinkInvoiceOnTheFly()"><i data-lucide="save"></i> Save & Link Invoice</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Toast Notification Popup Alert -->
     <div id="toast" class="toast"></div>
 
@@ -621,6 +911,8 @@
   <!-- Include Modular Script Components -->
   <?!= include('Scripts'); ?>
   <?!= include('ClientController'); ?>
+  <?!= include('OrderController'); ?>
+  <?!= include('InvoiceController'); ?>
   <?!= include('SlipController'); ?>
   <?!= include('PdfGenerator'); ?>
 

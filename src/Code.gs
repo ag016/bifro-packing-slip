@@ -7,13 +7,17 @@ const SHEETS = {
   SETTINGS: 'Settings',
   CLIENTS: 'Clients',
   PACKING_SLIPS: 'PackingSlips',
-  USERS: 'Users'
+  USERS: 'Users',
+  ORDERS: 'Orders',
+  INVOICES: 'Invoices'
 };
 
 const COUNTERS = {
   CLIENT: 'clientCounter',
   SLIP: 'slipCounter',
-  USER: 'userCounter'
+  USER: 'userCounter',
+  ORDER: 'orderCounter',
+  INVOICE: 'invoiceCounter'
 };
 
 /* ------------------------------------------------------------------
@@ -117,6 +121,10 @@ function initSheet(sheet, name) {
     sheet.getRange(1, 1, 1, 11).setValues([['Slip Code', 'Date', 'Client ID', 'Client Name', 'Client Company', 'Client Phone', 'Client Address', 'Items JSON', 'Total Quantity', 'Notes', 'Created At']]).setFontWeight('bold');
   } else if (name === SHEETS.USERS) {
     sheet.getRange(1, 1, 1, 5).setValues([['User ID', 'Name', 'Email', 'Role', 'Created At']]).setFontWeight('bold');
+  } else if (name === SHEETS.ORDERS) {
+    sheet.getRange(1, 1, 1, 7).setValues([['Order ID', 'Date', 'Client ID', 'Client Name', 'Items JSON', 'Status', 'Created At']]).setFontWeight('bold');
+  } else if (name === SHEETS.INVOICES) {
+    sheet.getRange(1, 1, 1, 7).setValues([['Invoice ID', 'Date', 'Client ID', 'Client Name', 'Items JSON', 'Status', 'Created At']]).setFontWeight('bold');
   }
 }
 
@@ -575,8 +583,8 @@ function normalizeDate(d) {
 
 function ensurePackingSlipsHeader(sheet) {
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  if (header.length < 14 || header[10] !== 'Invoice Number' || header[12] !== 'Created By' || header[13] !== 'Edited By') {
-    var newHeader = ['Slip Code', 'Date', 'Client ID', 'Client Name', 'Client Company', 'Client Phone', 'Client Address', 'Items JSON', 'Total Quantity', 'Notes', 'Invoice Number', 'Created At', 'Created By', 'Edited By'];
+  if (header.length < 16 || header[14] !== 'Linked Orders' || header[15] !== 'Linked Invoices') {
+    var newHeader = ['Slip Code', 'Date', 'Client ID', 'Client Name', 'Client Company', 'Client Phone', 'Client Address', 'Items JSON', 'Total Quantity', 'Notes', 'Invoice Number', 'Created At', 'Created By', 'Edited By', 'Linked Orders', 'Linked Invoices'];
     sheet.getRange(1, 1, 1, newHeader.length).setValues([newHeader]).setFontWeight('bold');
   }
 }
@@ -609,7 +617,9 @@ function getPackingSlips() {
         invoiceNumber: values[i][10] || '',
         createdAt: values[i][11],
         createdBy: values[i][12] || '',
-        editedBy: values[i][13] || ''
+        editedBy: values[i][13] || '',
+        linkedOrders: values[i][14] || '',
+        linkedInvoices: values[i][15] || ''
       });
     }
   }
@@ -670,6 +680,10 @@ function savePackingSlip(slip) {
   slip.editedBy = currentUser;
 
   ensurePackingSlipsHeader(sheet);
+  
+  var orderStr = Array.isArray(slip.linkedOrders) ? slip.linkedOrders.join(', ') : (slip.linkedOrders || '');
+  var invoiceStr = Array.isArray(slip.linkedInvoices) ? slip.linkedInvoices.join(', ') : (slip.linkedInvoices || '');
+
   sheet.appendRow([
     slip.slipCode,
     slip.date,
@@ -684,8 +698,18 @@ function savePackingSlip(slip) {
     slip.invoiceNumber || '',
     slip.createdAt,
     slip.createdBy,
-    slip.editedBy
+    slip.editedBy,
+    orderStr,
+    invoiceStr
   ]);
+
+  // Recalculate status for linked orders and invoices
+  try {
+    recalculateLinkedStatuses(slip.linkedOrders, slip.linkedInvoices);
+  } catch (e) {
+    Logger.log("Recalculate statuses failed: " + e.message);
+  }
+
   return slip;
 }
 
@@ -718,4 +742,394 @@ function duplicateSlip(slipCode) {
     }
   }
   return null;
+}
+
+/* ------------------------------------------------------------------
+ * Orders Database Operations
+ * ------------------------------------------------------------------ */
+
+function getOrders() {
+  checkLicenseOrThrow();
+  var sheet = getSheet(SHEETS.ORDERS);
+  var values = sheet.getDataRange().getValues();
+  var orders = [];
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][0]) {
+      var items = [];
+      try {
+        items = JSON.parse(values[i][4] || '[]');
+      } catch (e) {
+        items = [];
+      }
+      orders.push({
+        id: values[i][0],
+        date: normalizeDate(values[i][1]),
+        clientId: values[i][2],
+        clientName: values[i][3],
+        items: items,
+        status: values[i][5] || 'Pending',
+        createdAt: values[i][6]
+      });
+    }
+  }
+  return orders;
+}
+
+function saveOrder(order) {
+  checkLicenseOrThrow();
+  if (!order) throw new Error('Order data is empty.');
+  if (!order.clientId || !order.clientName) throw new Error('Client selection is required.');
+  
+  var sheet = getSheet(SHEETS.ORDERS);
+  var values = sheet.getDataRange().getValues();
+  order.createdAt = order.createdAt || new Date().toISOString();
+  order.status = order.status || 'Pending';
+  
+  if (order.id) {
+    // Update existing order
+    var found = false;
+    for (var i = 1; i < values.length; i++) {
+      if (values[i][0] === order.id) {
+        sheet.getRange(i + 1, 2, 1, 5).setValues([[
+          order.date || '',
+          order.clientId,
+          order.clientName,
+          JSON.stringify(order.items || []),
+          order.status
+        ]]);
+        found = true;
+        break;
+      }
+    }
+    if (!found) throw new Error('Order ID ' + order.id + ' not found for update.');
+  } else {
+    // Create new order
+    order.id = getNextId(COUNTERS.ORDER, 'OR-');
+    sheet.appendRow([
+      order.id,
+      order.date || '',
+      order.clientId,
+      order.clientName,
+      JSON.stringify(order.items || []),
+      order.status,
+      order.createdAt
+    ]);
+  }
+  return order;
+}
+
+function deleteOrder(orderId) {
+  checkLicenseOrThrow();
+  if (!orderId) return false;
+  var sheet = getSheet(SHEETS.ORDERS);
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][0] === orderId) {
+      sheet.deleteRow(i + 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+/* ------------------------------------------------------------------
+ * Invoices Database Operations
+ * ------------------------------------------------------------------ */
+
+function getInvoices() {
+  checkLicenseOrThrow();
+  var sheet = getSheet(SHEETS.INVOICES);
+  var values = sheet.getDataRange().getValues();
+  var invoices = [];
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][0]) {
+      var items = [];
+      try {
+        items = JSON.parse(values[i][4] || '[]');
+      } catch (e) {
+        items = [];
+      }
+      invoices.push({
+        id: values[i][0],
+        date: normalizeDate(values[i][1]),
+        clientId: values[i][2],
+        clientName: values[i][3],
+        items: items,
+        status: values[i][5] || 'Unpaid',
+        createdAt: values[i][6]
+      });
+    }
+  }
+  return invoices;
+}
+
+function saveInvoice(invoice) {
+  checkLicenseOrThrow();
+  if (!invoice) throw new Error('Invoice data is empty.');
+  if (!invoice.clientId || !invoice.clientName) throw new Error('Client selection is required.');
+  
+  var sheet = getSheet(SHEETS.INVOICES);
+  var values = sheet.getDataRange().getValues();
+  invoice.createdAt = invoice.createdAt || new Date().toISOString();
+  invoice.status = invoice.status || 'Unpaid';
+  
+  if (invoice.id) {
+    // Update existing invoice
+    var found = false;
+    for (var i = 1; i < values.length; i++) {
+      if (values[i][0] === invoice.id) {
+        sheet.getRange(i + 1, 2, 1, 5).setValues([[
+          invoice.date || '',
+          invoice.clientId,
+          invoice.clientName,
+          JSON.stringify(invoice.items || []),
+          invoice.status
+        ]]);
+        found = true;
+        break;
+      }
+    }
+    if (!found) throw new Error('Invoice ID ' + invoice.id + ' not found for update.');
+  } else {
+    // Create new invoice
+    invoice.id = getNextId(COUNTERS.INVOICE, 'INV-');
+    sheet.appendRow([
+      invoice.id,
+      invoice.date || '',
+      invoice.clientId,
+      invoice.clientName,
+      JSON.stringify(invoice.items || []),
+      invoice.status,
+      invoice.createdAt
+    ]);
+  }
+  return invoice;
+}
+
+function deleteInvoice(invoiceId) {
+  checkLicenseOrThrow();
+  if (!invoiceId) return false;
+  var sheet = getSheet(SHEETS.INVOICES);
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][0] === invoiceId) {
+      sheet.deleteRow(i + 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+/* ------------------------------------------------------------------
+ * Balance & Linkage Statistics
+ * ------------------------------------------------------------------ */
+
+function getLinkedDeliveryStats(clientId, orderIds, invoiceIds) {
+  checkLicenseOrThrow();
+  
+  // Clean IDs
+  var targetOrders = [];
+  if (orderIds) {
+    if (Array.isArray(orderIds)) targetOrders = orderIds;
+    else targetOrders = orderIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  }
+  var targetInvoices = [];
+  if (invoiceIds) {
+    if (Array.isArray(invoiceIds)) targetInvoices = invoiceIds;
+    else targetInvoices = invoiceIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  }
+
+  var stats = {}; // { productName: { ordered: 0, invoiced: 0, delivered: 0 } }
+
+  // 1. Gather Ordered quantities
+  if (targetOrders.length > 0) {
+    var dbOrders = getOrders();
+    dbOrders.forEach(function(order) {
+      if (targetOrders.indexOf(order.id) !== -1) {
+        (order.items || []).forEach(function(item) {
+          var name = String(item.name || '').trim();
+          if (name) {
+            if (!stats[name]) stats[name] = { ordered: 0, invoiced: 0, delivered: 0 };
+            stats[name].ordered += Number(item.quantity || 0);
+          }
+        });
+      }
+    });
+  }
+
+  // 2. Gather Invoiced quantities
+  if (targetInvoices.length > 0) {
+    var dbInvoices = getInvoices();
+    dbInvoices.forEach(function(invoice) {
+      if (targetInvoices.indexOf(invoice.id) !== -1) {
+        (invoice.items || []).forEach(function(item) {
+          var name = String(item.name || '').trim();
+          if (name) {
+            if (!stats[name]) stats[name] = { ordered: 0, invoiced: 0, delivered: 0 };
+            stats[name].invoiced += Number(item.quantity || 0);
+          }
+        });
+      }
+    });
+  }
+
+  // 3. Sum up Delivered quantities from all active packing slips
+  var dbSlips = getPackingSlips();
+  dbSlips.forEach(function(slip) {
+    // Only parse active slips (skip revision archives)
+    if (slip.slipCode.indexOf('-rev') === -1) {
+      (slip.items || []).forEach(function(item) {
+        var name = String(item.name || '').trim();
+        if (name) {
+          // If this item was linked to one of our target orders or invoices
+          var matchesOrder = item.orderId && targetOrders.indexOf(item.orderId) !== -1;
+          var matchesInvoice = item.invoiceId && targetInvoices.indexOf(item.invoiceId) !== -1;
+          
+          if (matchesOrder || matchesInvoice) {
+            if (!stats[name]) stats[name] = { ordered: 0, invoiced: 0, delivered: 0 };
+            stats[name].delivered += Number(item.quantity || 0);
+          }
+        }
+      });
+    }
+  });
+
+  return stats;
+}
+
+function recalculateLinkedStatuses(orderIds, invoiceIds) {
+  var targetOrders = [];
+  if (orderIds) {
+    if (Array.isArray(orderIds)) targetOrders = orderIds;
+    else targetOrders = orderIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  }
+  var targetInvoices = [];
+  if (invoiceIds) {
+    if (Array.isArray(invoiceIds)) targetInvoices = invoiceIds;
+    else targetInvoices = invoiceIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  }
+
+  var dbSlips = getPackingSlips().filter(function(s) { return s.slipCode.indexOf('-rev') === -1; });
+
+  // Recalculate Orders Status
+  if (targetOrders.length > 0) {
+    var orderSheet = getSheet(SHEETS.ORDERS);
+    var orderValues = orderSheet.getDataRange().getValues();
+    
+    targetOrders.forEach(function(orderId) {
+      var foundIndex = -1;
+      var orderObj = null;
+      for (var i = 1; i < orderValues.length; i++) {
+        if (orderValues[i][0] === orderId) {
+          foundIndex = i + 1;
+          try {
+            orderObj = {
+              items: JSON.parse(orderValues[i][4] || '[]'),
+              status: orderValues[i][5]
+            };
+          } catch(e) {}
+          break;
+        }
+      }
+
+      if (foundIndex !== -1 && orderObj && orderObj.items.length > 0) {
+        // Calculate delivered quantity per item for this order
+        var allDelivered = true;
+        var anyDelivered = false;
+
+        orderObj.items.forEach(function(orderItem) {
+          var itemName = String(orderItem.name || '').trim();
+          var orderedQty = Number(orderItem.quantity || 0);
+          var deliveredQty = 0;
+
+          dbSlips.forEach(function(slip) {
+            (slip.items || []).forEach(function(slipItem) {
+              if (String(slipItem.name || '').trim() === itemName && slipItem.orderId === orderId) {
+                deliveredQty += Number(slipItem.quantity || 0);
+              }
+            });
+          });
+
+          if (deliveredQty < orderedQty) {
+            allDelivered = false;
+          }
+          if (deliveredQty > 0) {
+            anyDelivered = true;
+          }
+        });
+
+        var newStatus = 'Pending';
+        if (allDelivered) {
+          newStatus = 'Completed';
+        } else if (anyDelivered) {
+          newStatus = 'Partially Delivered';
+        }
+
+        // If the order status was manually marked completed or is changing, save it
+        if (orderObj.status !== 'Completed' || newStatus === 'Completed') {
+          orderSheet.getRange(foundIndex, 6).setValue(newStatus);
+        }
+      }
+    });
+  }
+
+  // Recalculate Invoices Status
+  if (targetInvoices.length > 0) {
+    var invoiceSheet = getSheet(SHEETS.INVOICES);
+    var invoiceValues = invoiceSheet.getDataRange().getValues();
+
+    targetInvoices.forEach(function(invoiceId) {
+      var foundIndex = -1;
+      var invoiceObj = null;
+      for (var i = 1; i < invoiceValues.length; i++) {
+        if (invoiceValues[i][0] === invoiceId) {
+          foundIndex = i + 1;
+          try {
+            invoiceObj = {
+              items: JSON.parse(invoiceValues[i][4] || '[]'),
+              status: invoiceValues[i][5]
+            };
+          } catch(e) {}
+          break;
+        }
+      }
+
+      if (foundIndex !== -1 && invoiceObj && invoiceObj.items.length > 0) {
+        var allDelivered = true;
+        var anyDelivered = false;
+
+        invoiceObj.items.forEach(function(invoiceItem) {
+          var itemName = String(invoiceItem.name || '').trim();
+          var invoicedQty = Number(invoiceItem.quantity || 0);
+          var deliveredQty = 0;
+
+          dbSlips.forEach(function(slip) {
+            (slip.items || []).forEach(function(slipItem) {
+              if (String(slipItem.name || '').trim() === itemName && slipItem.invoiceId === invoiceId) {
+                deliveredQty += Number(slipItem.quantity || 0);
+              }
+            });
+          });
+
+          if (deliveredQty < invoicedQty) {
+            allDelivered = false;
+          }
+          if (deliveredQty > 0) {
+            anyDelivered = true;
+          }
+        });
+
+        var newStatus = invoiceObj.status; // Default to old status (Unpaid/Paid)
+        if (allDelivered) {
+          newStatus = 'Completed';
+        } else if (anyDelivered) {
+          newStatus = 'Partially Delivered';
+        }
+
+        if (invoiceObj.status !== 'Completed' || newStatus === 'Completed') {
+          invoiceSheet.getRange(foundIndex, 6).setValue(newStatus);
+        }
+      }
+    });
+  }
 }

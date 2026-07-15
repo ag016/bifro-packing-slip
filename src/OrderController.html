@@ -1,0 +1,267 @@
+<script>
+/**
+ * Packing Slip Software - Order Controller
+ * Order management event handlers, rendering, and inline editing
+ */
+
+let editingOrderId = null;
+
+function loadOrders(callback) {
+  // Ensure clients are loaded first since orders reference clients
+  if (!clients.length) {
+    google.script.run
+      .withSuccessHandler(list => {
+        clients = list || [];
+        populateClientSelect();
+        doLoadOrders(callback);
+      })
+      .withFailureHandler(handleError)
+      .getClients();
+  } else {
+    doLoadOrders(callback);
+  }
+}
+
+function doLoadOrders(callback) {
+  google.script.run
+    .withSuccessHandler(list => {
+      orders = list || [];
+      renderOrders();
+      populateOrderClientSelect();
+      if (typeof callback === 'function') callback();
+    })
+    .withFailureHandler(handleError)
+    .getOrders();
+}
+
+function populateOrderClientSelect() {
+  const sel = $('#order-client');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">-- Choose Client --</option>';
+  
+  clients.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = `${c.name} ${c.company ? ' - ' + c.company : ''} [${c.id}]`;
+    sel.appendChild(opt);
+  });
+  sel.value = current;
+}
+
+function renderOrders() {
+  const tbody = $('#orders-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  
+  if (!orders.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No orders found. Add an order details above to start.</td></tr>';
+    return;
+  }
+  
+  orders.slice().reverse().forEach(o => {
+    let statusClass = 'badge-secondary';
+    if (o.status === 'Pending') statusClass = 'badge-info';
+    else if (o.status === 'Partially Delivered') statusClass = 'badge-warning';
+    else if (o.status === 'Completed') statusClass = 'badge-success';
+
+    const itemsCount = (o.items || []).length;
+    const totalQty = (o.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+
+    const tr = document.createElement('tr');
+    tr.className = 'table-row-animate';
+    tr.innerHTML = `
+      <td><span class="badge badge-accent">${escapeHtml(o.id || '')}</span></td>
+      <td><strong>${formatDate(o.date)}</strong></td>
+      <td>${escapeHtml(o.clientName || '')}</td>
+      <td>${itemsCount} items (${totalQty} units)</td>
+      <td><span class="badge ${statusClass}">${escapeHtml(o.status || 'Pending')}</span></td>
+      <td>
+        <div style="display:flex; gap: 4px;">
+          <button class="btn btn-secondary-soft btn-xs" onclick="editOrder('${o.id}')" title="Edit Order">
+            <i data-lucide="edit-2" style="width: 12px; height: 12px;"></i> Edit
+          </button>
+          <button class="btn btn-danger-soft btn-xs" onclick="deleteOrderClick('${o.id}')" title="Delete Order">
+            <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i> Delete
+          </button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+  
+  if (window.lucide) lucide.createIcons();
+}
+
+function addOrderItemRow(name, qty) {
+  const container = $('#order-items-container');
+  if (!container) return;
+
+  const row = document.createElement('div');
+  row.className = 'item-row card-sm-inset animate-fade-in';
+  const id = 'order-item-' + Date.now() + '-' + Math.floor(Math.random()*1000);
+
+  row.innerHTML = `
+    <div class="field-group flex-3">
+      <label for="${id}-name" class="label-inline">Product Description</label>
+      <input type="text" id="${id}-name" class="item-name" placeholder="Item name..." value="${escapeHtml(name || '')}" required>
+    </div>
+    <div class="field-group flex-1">
+      <label for="${id}-qty" class="label-inline">Ordered Qty</label>
+      <input type="number" id="${id}-qty" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty || 1}" required>
+    </div>
+    <div class="btn-delete-container">
+      <button type="button" class="btn-icon btn-danger-soft" onclick="this.closest('.item-row').remove()" title="Remove Row">
+        <i data-lucide="trash-2"></i>
+      </button>
+    </div>
+  `;
+  container.appendChild(row);
+  if (window.lucide) lucide.createIcons();
+}
+
+function editOrder(orderId) {
+  const o = orders.find(x => x.id === orderId);
+  if (!o) return;
+  
+  editingOrderId = o.id;
+  
+  $('#order-client').value = o.clientId || '';
+  $('#order-date').value = o.date || '';
+  $('#order-status').value = o.status || 'Pending';
+  
+  // Populate items
+  const container = $('#order-items-container');
+  if (container) {
+    container.innerHTML = '';
+    if (o.items && o.items.length) {
+      o.items.forEach(it => addOrderItemRow(it.name, it.quantity));
+    } else {
+      addOrderItemRow('', 1);
+    }
+  }
+
+  // UI state updates
+  const cancelBtn = $('#btn-cancel-order-edit');
+  if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+  
+  const formCard = $('#orders .card:first-child');
+  if (formCard) {
+    formCard.querySelector('h2').innerHTML = `<i data-lucide="edit" style="color:var(--accent);"></i> Edit Order Details: ${o.id}`;
+    $('#btn-save-order').innerHTML = '<i data-lucide="check-circle"></i> Update Order Details';
+  }
+  
+  $('#order-form').scrollIntoView({ behavior: 'smooth' });
+  if (window.lucide) lucide.createIcons();
+}
+
+function cancelOrderEdit() {
+  editingOrderId = null;
+  $('#order-form').reset();
+  $('#order-items-container').innerHTML = '';
+  addOrderItemRow('', 1);
+  
+  const cancelBtn = $('#btn-cancel-order-edit');
+  if (cancelBtn) cancelBtn.style.display = 'none';
+  
+  const formCard = $('#orders .card:first-child');
+  if (formCard) {
+    formCard.querySelector('h2').innerHTML = '<i data-lucide="shopping-cart" style="color:var(--accent);"></i> Register New Order';
+    $('#btn-save-order').innerHTML = '<i data-lucide="plus-circle"></i> Save Order Details';
+  }
+  
+  if (window.lucide) lucide.createIcons();
+}
+
+function saveOrderSubmit() {
+  const clientId = $('#order-client').value;
+  const orderDate = $('#order-date').value;
+  const status = $('#order-status').value;
+  
+  if (!clientId) {
+    toast('Client selection is required.', 'danger');
+    return;
+  }
+  
+  const clientObj = clients.find(c => c.id === clientId);
+  if (!clientObj) return;
+
+  // Gather items
+  const rows = document.querySelectorAll('#order-items-container .item-row');
+  const items = [];
+  let valid = true;
+
+  rows.forEach((row, idx) => {
+    const name = row.querySelector('.item-name').value.trim();
+    const qty = parseInt(row.querySelector('.item-qty').value, 10);
+    
+    if (!name) {
+      toast(`Row ${idx + 1}: Description is required.`, 'danger');
+      valid = false;
+      return;
+    }
+    if (isNaN(qty) || qty <= 0) {
+      toast(`Row ${idx + 1}: Quantity must be a valid positive integer.`, 'danger');
+      valid = false;
+      return;
+    }
+    items.push({ name, quantity: qty });
+  });
+
+  if (!valid) return;
+
+  const order = {
+    id: editingOrderId || '',
+    date: orderDate,
+    clientId: clientId,
+    clientName: clientObj.name,
+    items: items,
+    status: status
+  };
+
+  const btn = $('#btn-save-order');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Saving...';
+  }
+
+  google.script.run
+    .withSuccessHandler(saved => {
+      toast('Order saved successfully: ' + saved.id, 'success');
+      cancelOrderEdit();
+      loadOrders();
+      if (btn) btn.disabled = false;
+    })
+    .withFailureHandler(err => {
+      handleError(err);
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = editingOrderId ? '<i data-lucide="check-circle"></i> Update Order Details' : '<i data-lucide="plus-circle"></i> Save Order Details';
+      }
+      if (window.lucide) lucide.createIcons();
+    })
+    .saveOrder(order);
+}
+
+function deleteOrderClick(orderId) {
+  if (!confirm('Are you sure you want to delete Order ' + orderId + '? This action cannot be undone.')) return;
+  
+  google.script.run
+    .withSuccessHandler(success => {
+      if (success) {
+        toast('Order deleted successfully.', 'success');
+        loadOrders();
+      } else {
+        toast('Failed to delete order.', 'danger');
+      }
+    })
+    .withFailureHandler(handleError)
+    .deleteOrder(orderId);
+}
+
+// Initialise items container
+document.addEventListener('DOMContentLoaded', () => {
+  const container = $('#order-items-container');
+  if (container) addOrderItemRow('', 1);
+});
+</script>

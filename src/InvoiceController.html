@@ -1,0 +1,291 @@
+<script>
+/**
+ * Packing Slip Software - Invoice Controller
+ * Invoice management event handlers, rendering, and inline editing
+ */
+
+let editingInvoiceId = null;
+
+function loadInvoices(callback) {
+  // Ensure clients are loaded first
+  if (!clients.length) {
+    google.script.run
+      .withSuccessHandler(list => {
+        clients = list || [];
+        populateClientSelect();
+        doLoadInvoices(callback);
+      })
+      .withFailureHandler(handleError)
+      .getClients();
+  } else {
+    doLoadInvoices(callback);
+  }
+}
+
+function doLoadInvoices(callback) {
+  google.script.run
+    .withSuccessHandler(list => {
+      invoices = list || [];
+      renderInvoices();
+      populateInvoiceClientSelect();
+      if (typeof callback === 'function') callback();
+    })
+    .withFailureHandler(handleError)
+    .getInvoices();
+}
+
+function populateInvoiceClientSelect() {
+  const sel = $('#invoice-client');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">-- Choose Client --</option>';
+  
+  clients.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = `${c.name} ${c.company ? ' - ' + c.company : ''} [${c.id}]`;
+    sel.appendChild(opt);
+  });
+  sel.value = current;
+}
+
+function renderInvoices() {
+  const tbody = $('#invoices-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  
+  if (!invoices.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No invoices found. Create an invoice above to start.</td></tr>';
+    return;
+  }
+  
+  invoices.slice().reverse().forEach(inv => {
+    let statusClass = 'badge-secondary';
+    if (inv.status === 'Unpaid') statusClass = 'badge-warning';
+    else if (inv.status === 'Paid') statusClass = 'badge-success';
+    else if (inv.status === 'Partially Delivered') statusClass = 'badge-info';
+    else if (inv.status === 'Completed') statusClass = 'badge-success';
+
+    const itemsCount = (inv.items || []).length;
+    const totalQty = (inv.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const totalPrice = (inv.items || []).reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unitPrice || 0)), 0);
+
+    const tr = document.createElement('tr');
+    tr.className = 'table-row-animate';
+    tr.innerHTML = `
+      <td><span class="badge badge-accent">${escapeHtml(inv.id || '')}</span></td>
+      <td><strong>${formatDate(inv.date)}</strong></td>
+      <td>${escapeHtml(inv.clientName || '')}</td>
+      <td>${itemsCount} items (${totalQty} units, $${totalPrice.toFixed(2)})</td>
+      <td><span class="badge ${statusClass}">${escapeHtml(inv.status || 'Unpaid')}</span></td>
+      <td>
+        <div style="display:flex; gap: 4px;">
+          <button class="btn btn-secondary-soft btn-xs" onclick="editInvoice('${inv.id}')" title="Edit Invoice">
+            <i data-lucide="edit-2" style="width: 12px; height: 12px;"></i> Edit
+          </button>
+          <button class="btn btn-danger-soft btn-xs" onclick="deleteInvoiceClick('${inv.id}')" title="Delete Invoice">
+            <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i> Delete
+          </button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+  
+  if (window.lucide) lucide.createIcons();
+}
+
+function addInvoiceItemRow(name, qty, unitPrice) {
+  const container = $('#invoice-items-container');
+  if (!container) return;
+
+  const row = document.createElement('div');
+  row.className = 'item-row card-sm-inset animate-fade-in';
+  const id = 'invoice-item-' + Date.now() + '-' + Math.floor(Math.random()*1000);
+
+  row.innerHTML = `
+    <div class="field-group flex-2">
+      <label for="${id}-name" class="label-inline">Product Description</label>
+      <input type="text" id="${id}-name" class="item-name" placeholder="Item name..." value="${escapeHtml(name || '')}" required>
+    </div>
+    <div class="field-group flex-1">
+      <label for="${id}-qty" class="label-inline">Invoiced Qty</label>
+      <input type="number" id="${id}-qty" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty || 1}" oninput="calcInvoiceRowTotal(this)" required>
+    </div>
+    <div class="field-group flex-1">
+      <label for="${id}-price" class="label-inline">Unit Price ($)</label>
+      <input type="number" id="${id}-price" class="item-price" placeholder="Price" min="0" step="0.01" value="${unitPrice || 0.00}" oninput="calcInvoiceRowTotal(this)" required>
+    </div>
+    <div style="display:flex; flex-direction:column; justify-content:center; padding: 0.25rem 0.5rem; font-size:0.85rem; font-weight:600; min-width:80px;">
+      <span style="font-size:0.7rem; color:var(--text-muted); font-weight:400; text-transform:uppercase;">Total</span>
+      <span class="row-total">$${((qty || 1) * (unitPrice || 0)).toFixed(2)}</span>
+    </div>
+    <div class="btn-delete-container">
+      <button type="button" class="btn-icon btn-danger-soft" onclick="this.closest('.item-row').remove()" title="Remove Row">
+        <i data-lucide="trash-2"></i>
+      </button>
+    </div>
+  `;
+  container.appendChild(row);
+  if (window.lucide) lucide.createIcons();
+}
+
+function calcInvoiceRowTotal(input) {
+  const row = input.closest('.item-row');
+  if (!row) return;
+  const qty = parseInt(row.querySelector('.item-qty').value, 10) || 0;
+  const price = parseFloat(row.querySelector('.item-price').value) || 0;
+  row.querySelector('.row-total').textContent = '$' + (qty * price).toFixed(2);
+}
+
+function editInvoice(invoiceId) {
+  const inv = invoices.find(x => x.id === invoiceId);
+  if (!inv) return;
+  
+  editingInvoiceId = inv.id;
+  
+  $('#invoice-client').value = inv.clientId || '';
+  $('#invoice-date').value = inv.date || '';
+  $('#invoice-status').value = inv.status || 'Unpaid';
+  
+  // Populate items
+  const container = $('#invoice-items-container');
+  if (container) {
+    container.innerHTML = '';
+    if (inv.items && inv.items.length) {
+      inv.items.forEach(it => addInvoiceItemRow(it.name, it.quantity, it.unitPrice));
+    } else {
+      addInvoiceItemRow('', 1, 0);
+    }
+  }
+
+  // UI state updates
+  const cancelBtn = $('#btn-cancel-invoice-edit');
+  if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+  
+  const formCard = $('#invoices .card:first-child');
+  if (formCard) {
+    formCard.querySelector('h2').innerHTML = `<i data-lucide="edit" style="color:var(--accent);"></i> Edit Invoice Details: ${inv.id}`;
+    $('#btn-save-invoice').innerHTML = '<i data-lucide="check-circle"></i> Update Invoice Details';
+  }
+  
+  $('#invoice-form').scrollIntoView({ behavior: 'smooth' });
+  if (window.lucide) lucide.createIcons();
+}
+
+function cancelInvoiceEdit() {
+  editingInvoiceId = null;
+  $('#invoice-form').reset();
+  $('#invoice-items-container').innerHTML = '';
+  addInvoiceItemRow('', 1, 0);
+  
+  const cancelBtn = $('#btn-cancel-invoice-edit');
+  if (cancelBtn) cancelBtn.style.display = 'none';
+  
+  const formCard = $('#invoices .card:first-child');
+  if (formCard) {
+    formCard.querySelector('h2').innerHTML = '<i data-lucide="file-plus-2" style="color:var(--accent);"></i> Create New Invoice';
+    $('#btn-save-invoice').innerHTML = '<i data-lucide="plus-circle"></i> Save Invoice Details';
+  }
+  
+  if (window.lucide) lucide.createIcons();
+}
+
+function saveInvoiceSubmit() {
+  const clientId = $('#invoice-client').value;
+  const invoiceDate = $('#invoice-date').value;
+  const status = $('#invoice-status').value;
+  
+  if (!clientId) {
+    toast('Client selection is required.', 'danger');
+    return;
+  }
+  
+  const clientObj = clients.find(c => c.id === clientId);
+  if (!clientObj) return;
+
+  // Gather items
+  const rows = document.querySelectorAll('#invoice-items-container .item-row');
+  const items = [];
+  let valid = true;
+
+  rows.forEach((row, idx) => {
+    const name = row.querySelector('.item-name').value.trim();
+    const qty = parseInt(row.querySelector('.item-qty').value, 10);
+    const price = parseFloat(row.querySelector('.item-price').value);
+    
+    if (!name) {
+      toast(`Row ${idx + 1}: Description is required.`, 'danger');
+      valid = false;
+      return;
+    }
+    if (isNaN(qty) || qty <= 0) {
+      toast(`Row ${idx + 1}: Quantity must be a valid positive integer.`, 'danger');
+      valid = false;
+      return;
+    }
+    if (isNaN(price) || price < 0) {
+      toast(`Row ${idx + 1}: Price must be a valid non-negative number.`, 'danger');
+      valid = false;
+      return;
+    }
+    items.push({ name, quantity: qty, unitPrice: price });
+  });
+
+  if (!valid) return;
+
+  const invoice = {
+    id: editingInvoiceId || '',
+    date: invoiceDate,
+    clientId: clientId,
+    clientName: clientObj.name,
+    items: items,
+    status: status
+  };
+
+  const btn = $('#btn-save-invoice');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Saving...';
+  }
+
+  google.script.run
+    .withSuccessHandler(saved => {
+      toast('Invoice saved successfully: ' + saved.id, 'success');
+      cancelInvoiceEdit();
+      loadInvoices();
+      if (btn) btn.disabled = false;
+    })
+    .withFailureHandler(err => {
+      handleError(err);
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = editingInvoiceId ? '<i data-lucide="check-circle"></i> Update Invoice Details' : '<i data-lucide="plus-circle"></i> Save Invoice Details';
+      }
+      if (window.lucide) lucide.createIcons();
+    })
+    .saveInvoice(invoice);
+}
+
+function deleteInvoiceClick(invoiceId) {
+  if (!confirm('Are you sure you want to delete Invoice ' + invoiceId + '? This action cannot be undone.')) return;
+  
+  google.script.run
+    .withSuccessHandler(success => {
+      if (success) {
+        toast('Invoice deleted successfully.', 'success');
+        loadInvoices();
+      } else {
+        toast('Failed to delete invoice.', 'danger');
+      }
+    })
+    .withFailureHandler(handleError)
+    .deleteInvoice(invoiceId);
+}
+
+// Initialise items container
+document.addEventListener('DOMContentLoaded', () => {
+  const container = $('#invoice-items-container');
+  if (container) addInvoiceItemRow('', 1, 0);
+});
+</script>
