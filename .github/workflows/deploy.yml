@@ -31,7 +31,3 @@ jobs:
       # 5. Push code to Apps Script
       - name: Push Code
         run: clasp push --force
-
-      # 6. Deploy Web App Version
-      - name: Deploy Web App Version
-        run: clasp deploy
