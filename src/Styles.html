@@ -746,6 +746,15 @@ tr.table-row-animate:hover {
   position: relative;
 }
 
+.item-row-four-cols {
+  display: grid;
+  grid-template-columns: 3fr 1fr 1.2fr 45px;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
+  position: relative;
+}
+
 .field-group {
   display: flex;
   flex-direction: column;
@@ -1523,6 +1532,16 @@ tr.table-row-animate:hover {
   
   .item-row > div:first-child {
     grid-column: span 2;
+  }
+
+  .item-row-four-cols {
+    grid-template-columns: 1fr 1fr 45px;
+    gap: 0.5rem;
+    align-items: end;
+  }
+  
+  .item-row-four-cols > div:first-child {
+    grid-column: span 3;
   }
   
   .btn-delete-container {

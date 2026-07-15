@@ -108,7 +108,7 @@ function addInvoiceItemRow(name, qty, shipped) {
   if (!container) return;
 
   const row = document.createElement('div');
-  row.className = 'item-row card-sm-inset animate-fade-in';
+  row.className = 'item-row-four-cols card-sm-inset animate-fade-in';
   const id = 'invoice-item-' + Date.now() + '-' + Math.floor(Math.random()*1000);
 
   row.innerHTML = `
@@ -125,7 +125,7 @@ function addInvoiceItemRow(name, qty, shipped) {
       <input type="number" id="${id}-shipped" class="item-shipped" placeholder="0" min="0" step="1" value="${shipped || 0}">
     </div>
     <div class="btn-delete-container">
-      <button type="button" class="btn-icon btn-danger-soft" onclick="this.closest('.item-row').remove()" title="Remove Row">
+      <button type="button" class="btn-icon btn-danger-soft" onclick="this.closest('.item-row-four-cols').remove()" title="Remove Row">
         <i data-lucide="trash-2"></i>
       </button>
     </div>
@@ -142,7 +142,6 @@ function editInvoice(invoiceId) {
   
   $('#invoice-client').value = inv.clientId || '';
   $('#invoice-date').value = inv.date || '';
-  $('#invoice-status').value = inv.status || 'Unpaid';
   
   // Populate items
   const container = $('#invoice-items-container');
@@ -191,7 +190,6 @@ function cancelInvoiceEdit() {
 function saveInvoiceSubmit() {
   const clientId = $('#invoice-client').value;
   const invoiceDate = $('#invoice-date').value || new Date().toISOString().substring(0, 10);
-  const status = $('#invoice-status').value;
   
   if (!clientId) {
     toast('Client selection is required.', 'danger');
@@ -205,7 +203,7 @@ function saveInvoiceSubmit() {
   }
 
   // Gather items
-  const rows = document.querySelectorAll('#invoice-items-container .item-row');
+  const rows = document.querySelectorAll('#invoice-items-container .item-row-four-cols');
   const items = [];
   let valid = true;
 
@@ -235,13 +233,14 @@ function saveInvoiceSubmit() {
 
   if (!valid) return;
 
+  const currentInvoice = invoices.find(inv => inv.id === editingInvoiceId) || {};
   const invoice = {
     id: editingInvoiceId || '',
     date: invoiceDate,
     clientId: clientId,
     clientName: clientObj.name,
     items: items,
-    status: status
+    status: currentInvoice.status || 'Unpaid'
   };
 
   const btn = $('#btn-save-invoice');
