@@ -102,7 +102,7 @@ function renderOrders() {
   if (window.lucide) lucide.createIcons();
 }
 
-function addOrderItemRow(name, qty) {
+function addOrderItemRow(name, qty, shipped) {
   const container = $('#order-items-container');
   if (!container) return;
 
@@ -111,13 +111,17 @@ function addOrderItemRow(name, qty) {
   const id = 'order-item-' + Date.now() + '-' + Math.floor(Math.random()*1000);
 
   row.innerHTML = `
-    <div class="field-group flex-3">
+    <div class="field-group flex-2">
       <label for="${id}-name" class="label-inline">Product Description</label>
       <input type="text" id="${id}-name" class="item-name" placeholder="Item name..." value="${escapeHtml(name || '')}" required>
     </div>
     <div class="field-group flex-1">
       <label for="${id}-qty" class="label-inline">Ordered Qty</label>
       <input type="number" id="${id}-qty" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty || 1}" required>
+    </div>
+    <div class="field-group flex-1">
+      <label for="${id}-shipped" class="label-inline">Amount Shipped (Optional)</label>
+      <input type="number" id="${id}-shipped" class="item-shipped" placeholder="0" min="0" step="1" value="${shipped || 0}">
     </div>
     <div class="btn-delete-container">
       <button type="button" class="btn-icon btn-danger-soft" onclick="this.closest('.item-row').remove()" title="Remove Row">
@@ -144,9 +148,9 @@ function editOrder(orderId) {
   if (container) {
     container.innerHTML = '';
     if (o.items && o.items.length) {
-      o.items.forEach(it => addOrderItemRow(it.name, it.quantity));
+      o.items.forEach(it => addOrderItemRow(it.name, it.quantity, it.shipped));
     } else {
-      addOrderItemRow('', 1);
+      addOrderItemRow('', 1, 0);
     }
   }
 
@@ -168,7 +172,7 @@ function cancelOrderEdit() {
   editingOrderId = null;
   $('#order-form').reset();
   $('#order-items-container').innerHTML = '';
-  addOrderItemRow('', 1);
+  addOrderItemRow('', 1, 0);
   if ($('#order-date')) $('#order-date').valueAsDate = new Date();
   
   const cancelBtn = $('#btn-cancel-order-edit');
@@ -207,6 +211,8 @@ function saveOrderSubmit() {
   rows.forEach((row, idx) => {
     const name = row.querySelector('.item-name').value.trim();
     const qty = parseInt(row.querySelector('.item-qty').value, 10);
+    const shippedVal = row.querySelector('.item-shipped').value;
+    const shipped = shippedVal !== '' ? parseInt(shippedVal, 10) : 0;
     
     if (!name) {
       toast(`Row ${idx + 1}: Description is required.`, 'danger');
@@ -218,7 +224,12 @@ function saveOrderSubmit() {
       valid = false;
       return;
     }
-    items.push({ name, quantity: qty });
+    if (isNaN(shipped) || shipped < 0) {
+      toast(`Row ${idx + 1}: Shipped quantity must be a non-negative integer.`, 'danger');
+      valid = false;
+      return;
+    }
+    items.push({ name, quantity: qty, shipped: shipped });
   });
 
   if (!valid) return;
@@ -275,6 +286,6 @@ function deleteOrderClick(orderId) {
 // Initialise items container
 document.addEventListener('DOMContentLoaded', () => {
   const container = $('#order-items-container');
-  if (container) addOrderItemRow('', 1);
+  if (container) addOrderItemRow('', 1, 0);
 });
 </script>

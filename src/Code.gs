@@ -775,6 +775,25 @@ function getOrders() {
   return orders;
 }
 
+function calculateStatusFromItems(items, defaultStatus) {
+  if (!items || !items.length) return defaultStatus;
+  var allDelivered = true;
+  var anyDelivered = false;
+  items.forEach(function(item) {
+    var qty = Number(item.quantity || 0);
+    var shipped = Number(item.shipped || 0);
+    if (shipped < qty) {
+      allDelivered = false;
+    }
+    if (shipped > 0) {
+      anyDelivered = true;
+    }
+  });
+  if (allDelivered) return 'Completed';
+  if (anyDelivered) return 'Partially Delivered';
+  return defaultStatus;
+}
+
 function saveOrder(order) {
   checkLicenseOrThrow();
   if (!order) throw new Error('Order data is empty.');
@@ -783,7 +802,7 @@ function saveOrder(order) {
   var sheet = getSheet(SHEETS.ORDERS);
   var values = sheet.getDataRange().getValues();
   order.createdAt = order.createdAt || new Date().toISOString();
-  order.status = order.status || 'Pending';
+  order.status = calculateStatusFromItems(order.items, 'Pending');
   
   if (order.id) {
     // Update existing order
@@ -871,7 +890,7 @@ function saveInvoice(invoice) {
   var sheet = getSheet(SHEETS.INVOICES);
   var values = sheet.getDataRange().getValues();
   invoice.createdAt = invoice.createdAt || new Date().toISOString();
-  invoice.status = invoice.status || 'Unpaid';
+  invoice.status = calculateStatusFromItems(invoice.items, 'Unpaid');
   
   if (invoice.id) {
     // Update existing invoice
@@ -1033,7 +1052,6 @@ function recalculateLinkedStatuses(orderIds, invoiceIds) {
       }
 
       if (foundIndex !== -1 && orderObj && orderObj.items.length > 0) {
-        // Calculate delivered quantity per item for this order
         var allDelivered = true;
         var anyDelivered = false;
 
@@ -1050,6 +1068,8 @@ function recalculateLinkedStatuses(orderIds, invoiceIds) {
             });
           });
 
+          orderItem.shipped = deliveredQty;
+
           if (deliveredQty < orderedQty) {
             allDelivered = false;
           }
@@ -1065,10 +1085,11 @@ function recalculateLinkedStatuses(orderIds, invoiceIds) {
           newStatus = 'Partially Delivered';
         }
 
-        // If the order status was manually marked completed or is changing, save it
-        if (orderObj.status !== 'Completed' || newStatus === 'Completed') {
-          orderSheet.getRange(foundIndex, 6).setValue(newStatus);
-        }
+        // Save updated items JSON and status
+        orderSheet.getRange(foundIndex, 5, 1, 2).setValues([[
+          JSON.stringify(orderObj.items),
+          newStatus
+        ]]);
       }
     });
   }
@@ -1111,6 +1132,8 @@ function recalculateLinkedStatuses(orderIds, invoiceIds) {
             });
           });
 
+          invoiceItem.shipped = deliveredQty;
+
           if (deliveredQty < invoicedQty) {
             allDelivered = false;
           }
@@ -1124,11 +1147,17 @@ function recalculateLinkedStatuses(orderIds, invoiceIds) {
           newStatus = 'Completed';
         } else if (anyDelivered) {
           newStatus = 'Partially Delivered';
+        } else {
+          if (newStatus === 'Completed' || newStatus === 'Partially Delivered') {
+            newStatus = 'Unpaid';
+          }
         }
 
-        if (invoiceObj.status !== 'Completed' || newStatus === 'Completed') {
-          invoiceSheet.getRange(foundIndex, 6).setValue(newStatus);
-        }
+        // Save updated items JSON and status
+        invoiceSheet.getRange(foundIndex, 5, 1, 2).setValues([[
+          JSON.stringify(invoiceObj.items),
+          newStatus
+        ]]);
       }
     });
   }

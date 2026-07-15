@@ -103,7 +103,7 @@ function renderInvoices() {
   if (window.lucide) lucide.createIcons();
 }
 
-function addInvoiceItemRow(name, qty) {
+function addInvoiceItemRow(name, qty, shipped) {
   const container = $('#invoice-items-container');
   if (!container) return;
 
@@ -112,13 +112,17 @@ function addInvoiceItemRow(name, qty) {
   const id = 'invoice-item-' + Date.now() + '-' + Math.floor(Math.random()*1000);
 
   row.innerHTML = `
-    <div class="field-group flex-3">
+    <div class="field-group flex-2">
       <label for="${id}-name" class="label-inline">Product Description</label>
       <input type="text" id="${id}-name" class="item-name" placeholder="Item name..." value="${escapeHtml(name || '')}" required>
     </div>
     <div class="field-group flex-1">
       <label for="${id}-qty" class="label-inline">Invoiced Qty</label>
       <input type="number" id="${id}-qty" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty || 1}" required>
+    </div>
+    <div class="field-group flex-1">
+      <label for="${id}-shipped" class="label-inline">Amount Shipped (Optional)</label>
+      <input type="number" id="${id}-shipped" class="item-shipped" placeholder="0" min="0" step="1" value="${shipped || 0}">
     </div>
     <div class="btn-delete-container">
       <button type="button" class="btn-icon btn-danger-soft" onclick="this.closest('.item-row').remove()" title="Remove Row">
@@ -145,9 +149,9 @@ function editInvoice(invoiceId) {
   if (container) {
     container.innerHTML = '';
     if (inv.items && inv.items.length) {
-      inv.items.forEach(it => addInvoiceItemRow(it.name, it.quantity));
+      inv.items.forEach(it => addInvoiceItemRow(it.name, it.quantity, it.shipped));
     } else {
-      addInvoiceItemRow('', 1);
+      addInvoiceItemRow('', 1, 0);
     }
   }
 
@@ -169,7 +173,7 @@ function cancelInvoiceEdit() {
   editingInvoiceId = null;
   $('#invoice-form').reset();
   $('#invoice-items-container').innerHTML = '';
-  addInvoiceItemRow('', 1);
+  addInvoiceItemRow('', 1, 0);
   if ($('#invoice-date')) $('#invoice-date').valueAsDate = new Date();
   
   const cancelBtn = $('#btn-cancel-invoice-edit');
@@ -208,6 +212,8 @@ function saveInvoiceSubmit() {
   rows.forEach((row, idx) => {
     const name = row.querySelector('.item-name').value.trim();
     const qty = parseInt(row.querySelector('.item-qty').value, 10);
+    const shippedVal = row.querySelector('.item-shipped').value;
+    const shipped = shippedVal !== '' ? parseInt(shippedVal, 10) : 0;
     
     if (!name) {
       toast(`Row ${idx + 1}: Description is required.`, 'danger');
@@ -219,7 +225,12 @@ function saveInvoiceSubmit() {
       valid = false;
       return;
     }
-    items.push({ name, quantity: qty });
+    if (isNaN(shipped) || shipped < 0) {
+      toast(`Row ${idx + 1}: Shipped quantity must be a non-negative integer.`, 'danger');
+      valid = false;
+      return;
+    }
+    items.push({ name, quantity: qty, shipped: shipped });
   });
 
   if (!valid) return;
@@ -276,6 +287,6 @@ function deleteInvoiceClick(invoiceId) {
 // Initialise items container
 document.addEventListener('DOMContentLoaded', () => {
   const container = $('#invoice-items-container');
-  if (container) addInvoiceItemRow('', 1);
+  if (container) addInvoiceItemRow('', 1, 0);
 });
 </script>
