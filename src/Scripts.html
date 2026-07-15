@@ -695,12 +695,16 @@ function hideInstallPrompt() {
 function openInstallPrompt() {
   const modal = $('#install-guide-modal');
   if (modal) {
-    modal.classList.add('show');
+    modal.classList.add('active');
     // Pre-select tab based on detected platform
-    if (installPlatform === 'ios') {
-      switchInstallTab('ios');
-    } else if (installPlatform === 'android') {
-      switchInstallTab('android');
+    if (typeof installPlatform !== 'undefined') {
+      if (installPlatform === 'ios') {
+        switchInstallTab('ios');
+      } else if (installPlatform === 'android') {
+        switchInstallTab('android');
+      } else {
+        switchInstallTab('desktop');
+      }
     } else {
       switchInstallTab('desktop');
     }
@@ -710,7 +714,7 @@ function openInstallPrompt() {
 
 function closeInstallGuide() {
   const modal = $('#install-guide-modal');
-  if (modal) modal.classList.remove('show');
+  if (modal) modal.classList.remove('active');
 }
 
 function switchInstallTab(tab) {
