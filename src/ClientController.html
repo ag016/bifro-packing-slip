@@ -179,20 +179,6 @@ function populateClientSelect() {
     });
     selOrder.value = current;
   }
-
-  // 3. Invoice client select
-  const selInvoice = $('#invoice-client');
-  if (selInvoice) {
-    const current = selInvoice.value;
-    selInvoice.innerHTML = '<option value="">-- Choose Client --</option>';
-    clients.forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c.id;
-      opt.textContent = `${c.name} ${c.company ? ' - ' + c.company : ''} [${c.id}]`;
-      selInvoice.appendChild(opt);
-    });
-    selInvoice.value = current;
-  }
 }
 
 function toggleNewClient() {

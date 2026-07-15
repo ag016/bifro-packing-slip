@@ -81,9 +81,6 @@
         <button id="sidebar-btn-orders" class="sidebar-link" onclick="showPage('orders')">
           <i data-lucide="shopping-bag"></i> Orders
         </button>
-        <button id="sidebar-btn-invoices" class="sidebar-link" onclick="showPage('invoices')">
-          <i data-lucide="file-text"></i> Invoices
-        </button>
         <button id="sidebar-btn-new-slip" class="sidebar-link" onclick="showPage('new-slip')">
           <i data-lucide="plus-circle"></i> New Packing Slip
         </button>
@@ -138,9 +135,6 @@
         </button>
         <button class="mobile-menu-item" onclick="navigateMobile('orders')">
           <i data-lucide="shopping-bag"></i> Orders
-        </button>
-        <button class="mobile-menu-item" onclick="navigateMobile('invoices')">
-          <i data-lucide="file-text"></i> Invoices
         </button>
         <button class="mobile-menu-item" onclick="navigateMobile('new-slip')">
           <i data-lucide="plus-circle"></i> New Packing Slip
@@ -418,6 +412,12 @@
                 </div>
               </div>
 
+              <div class="field-group" style="margin-top: 1rem;">
+                <label for="order-invoice-numbers">Invoice Numbers (Optional, comma-separated)</label>
+                <input type="text" id="order-invoice-numbers" placeholder="e.g. INV-2025-001, INV-2025-002">
+                <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.35rem;">Multiple invoice numbers can be attached to a single order. Each invoice number flows through to the packing slip when the order is linked.</p>
+              </div>
+
               <!-- Client suggestions sparkles panel -->
               <div id="order-suggestions-box" class="card-sm-inset" style="display:none; margin-top: 1.25rem; padding: 0.75rem 1rem;">
                 <datalist id="suggestions-list-order"></datalist>
@@ -466,77 +466,6 @@
           </div>
         </section>
 
-        <!-- Tab Page: Invoices -->
-        <section id="invoices" class="page" style="display:none;">
-          <div class="card">
-            <h2 id="invoice-form-title"><i data-lucide="file-plus-2" style="color:var(--accent);"></i> Create New Invoice</h2>
-            <form id="invoice-form" onsubmit="event.preventDefault(); saveInvoiceSubmit();">
-              <input type="hidden" id="invoice-edit-id" value="">
-              <div class="grid-3">
-                <div class="field-group">
-                  <label for="invoice-client">Select Client *</label>
-                  <select id="invoice-client" required>
-                    <option value="">-- Choose Client --</option>
-                  </select>
-                </div>
-                <div class="field-group">
-                  <label for="invoice-date">Invoice Date *</label>
-                  <input id="invoice-date" type="date" required>
-                </div>
-                <div class="field-group">
-                  <label for="invoice-custom-id">Invoice Number (Optional)</label>
-                  <input type="text" id="invoice-custom-id" placeholder="e.g. INV-2021 (blank to auto-generate)">
-                </div>
-              </div>
-
-              <!-- Client suggestions sparkles panel -->
-              <div id="invoice-suggestions-box" class="card-sm-inset" style="display:none; margin-top: 1.25rem; padding: 0.75rem 1rem;">
-                <datalist id="suggestions-list-invoice"></datalist>
-              </div>
-
-              <h3 style="margin: 1.5rem 0 0.75rem; display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="list" style="width:16px;height:16px;"></i> Invoice Items</h3>
-              <div id="invoice-items-container"></div>
-              <div style="margin: 1rem 0 1.5rem;">
-                <button type="button" class="btn btn-secondary-soft btn-sm" onclick="addInvoiceItemRow('', 1, 0)">
-                  <i data-lucide="plus"></i> Add Item Row
-                </button>
-              </div>
-
-
-
-              <div class="actions" style="margin-top:1.5rem;">
-                <button type="submit" class="btn btn-primary btn-md" id="btn-save-invoice">
-                  <i data-lucide="plus-circle"></i> Save Invoice Details
-                </button>
-                <button type="button" class="btn btn-secondary btn-md" id="btn-cancel-invoice-edit" style="display:none;" onclick="cancelInvoiceEdit()">
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <div class="card">
-            <h2><i data-lucide="file-text" style="color:var(--accent);"></i> Invoice Directory</h2>
-            <div class="table-responsive">
-              <table id="invoices-table">
-                <thead>
-                  <tr>
-                    <th>Invoice ID</th>
-                    <th>Date</th>
-                    <th>Client Name</th>
-                    <th>Items Count</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td colspan="6" class="empty">Loading invoices...</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
         <!-- Tab Page: New Packing Slip -->
         <section id="new-slip" class="page">
           <div class="card">
@@ -549,8 +478,8 @@
                   <input id="slip-date" type="date" required>
                 </div>
                 <div class="field-group">
-                  <label for="slip-invoice">Invoice Number <span class="text-muted" style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
-                  <input id="slip-invoice" type="text" placeholder="e.g. INV-00123">
+                  <label for="slip-invoice-quick">Quick Add Invoice Number <span class="text-muted" style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+                  <input id="slip-invoice-quick" type="text" placeholder="Type then press Enter to add a chip" onkeydown="if(event.key==='Enter'||event.key===','){event.preventDefault(); if(addInvoiceNumberTag(this.value)){renderInvoiceNumberTags();} this.value='';}">
                 </div>
               </div>
 
@@ -584,7 +513,7 @@
                 </div>
               </div>
 
-              <!-- Linkage Area for Orders & Invoices -->
+              <!-- Linkage Area for Orders & Invoice Numbers -->
               <div class="grid-2" style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
                 <div class="field-group">
                   <label style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
@@ -598,12 +527,13 @@
 
                 <div class="field-group">
                   <label style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                    <span>Linked Invoices</span>
-                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="openLinkInvoiceModal()" style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">+ Link Invoice</button>
+                    <span>Invoice Numbers</span>
+                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="openAddInvoiceNumberModal()" style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">+ Add Invoice Number</button>
                   </label>
-                  <div id="linked-invoices-tags" class="link-tag-container">
-                    <span class="text-muted" style="font-size:0.85rem; font-style:italic;">No invoices linked</span>
+                  <div id="slip-invoice-numbers-tags" class="link-tag-container">
+                    <span class="text-muted" style="font-size:0.85rem; font-style:italic;">No invoice numbers</span>
                   </div>
+                  <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.35rem;">Optional. Free-floating invoice numbers can be added here without linking an order; linking an order will also pull its invoice numbers.</p>
                 </div>
               </div>
 
@@ -828,11 +758,16 @@
               <label for="link-order-date" class="label-inline">Order Date *</label>
               <input type="date" id="link-order-date" style="width:100%;">
             </div>
-            
+            <div class="field-group" style="margin-bottom: 0.75rem;">
+              <label for="link-order-invoice-numbers" class="label-inline">Invoice Numbers (Optional, comma-separated)</label>
+              <input type="text" id="link-order-invoice-numbers" placeholder="e.g. INV-2025-001, INV-2025-002" style="width:100%;">
+              <p class="text-muted" style="font-size: 0.72rem; margin-top: 0.25rem;">Pre-populated from the packing slip's current invoice numbers so you can keep them in sync.</p>
+            </div>
+
             <h5 style="margin: 1rem 0 0.5rem;">Order Items</h5>
             <div id="link-order-items-container"></div>
             <button type="button" class="btn btn-secondary-soft btn-xs" onclick="addLinkOrderItemRow('', 1)" style="margin-top: 0.5rem;">+ Add Item Row</button>
-            
+
             <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem; justify-content: flex-end;">
               <button type="button" class="btn btn-secondary btn-sm" onclick="toggleLinkOrderCreateForm(false)">Back</button>
               <button type="button" class="btn btn-primary btn-sm" onclick="saveLinkOrderOnTheFly()"><i data-lucide="save"></i> Save & Link Order</button>
@@ -842,53 +777,29 @@
       </div>
     </div>
 
-    <!-- Link Invoice Modal -->
-    <div id="link-invoice-modal" class="modal" onclick="if(event.target===this) closeLinkInvoiceModal()">
-      <div class="modal-content" style="max-width: 500px;">
+    <!-- Add Invoice Number Modal (free-floating, optionally pulled from prior orders/slips) -->
+    <div id="link-invoice-num-modal" class="modal" onclick="if(event.target===this) closeAddInvoiceNumberModal()">
+      <div class="modal-content" style="max-width: 480px;">
         <div class="modal-header">
-          <h3 style="display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="file-text" style="color: var(--accent); width: 20px; height: 20px;"></i> Link Invoices</h3>
-          <button class="modal-close-btn" onclick="closeLinkInvoiceModal()">&times;</button>
+          <h3 style="display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="file-text" style="color: var(--accent); width: 20px; height: 20px;"></i> Add Invoice Number</h3>
+          <button class="modal-close-btn" onclick="closeAddInvoiceNumberModal()">&times;</button>
         </div>
-        <div id="link-invoice-modal-body" style="padding: 1.5rem;">
-          <!-- List of invoices for client -->
-          <div id="link-invoice-list-section">
-            <h4 style="margin-top:0;">Available Invoices for Selected Client:</h4>
-            <div style="max-height: 200px; overflow-y: auto; margin-bottom: 1rem; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.5rem;" id="link-invoice-table-container">
-              <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;" id="link-invoice-table">
-                <thead>
-                  <tr style="border-bottom: 1px solid var(--border); text-align: left;">
-                    <th style="padding: 0.5rem 0.25rem;">Invoice ID</th>
-                    <th style="padding: 0.5rem 0.25rem;">Date</th>
-                    <th style="padding: 0.5rem 0.25rem;">Status</th>
-                    <th style="padding: 0.5rem 0.25rem; text-align: right;">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td colspan="4" class="empty" style="text-align: center; padding: 1rem;">Select a client on the form first.</td></tr>
-                </tbody>
-              </table>
+        <div style="padding: 1.5rem;">
+          <div class="field-group">
+            <label for="add-invoice-num-input" class="label-inline">Invoice Number</label>
+            <div style="display:flex; gap: 0.5rem; align-items: stretch;">
+              <input type="text" id="add-invoice-num-input" placeholder="e.g. INV-2025-001" style="flex: 1;" onkeydown="if(event.key==='Enter'){event.preventDefault(); saveAddInvoiceNumber();}">
+              <button type="button" class="btn btn-primary btn-sm" onclick="saveAddInvoiceNumber()"><i data-lucide="plus"></i> Add</button>
             </div>
-            <button type="button" class="btn btn-secondary-soft btn-sm btn-full" onclick="toggleLinkInvoiceCreateForm(true)">
-              <i data-lucide="plus"></i> Create Invoice on-the-fly
-            </button>
+            <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.35rem;">Type a new invoice number or pick a previously used one below.</p>
           </div>
 
-          <!-- Create invoice inline form -->
-          <div id="link-invoice-create-section" style="display: none; border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
-            <h4 style="margin-top: 0;">Create New Invoice on-the-fly</h4>
-            <div class="field-group" style="margin-bottom: 0.75rem;">
-              <label for="link-invoice-date" class="label-inline">Invoice Date *</label>
-              <input type="date" id="link-invoice-date" style="width:100%;">
-            </div>
-            
-            <h5 style="margin: 1rem 0 0.5rem;">Invoice Items</h5>
-            <div id="link-invoice-items-container"></div>
-            <button type="button" class="btn btn-secondary-soft btn-xs" onclick="addLinkInvoiceItemRow('', 1)" style="margin-top: 0.5rem;">+ Add Item Row</button>
-            
-            <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem; justify-content: flex-end;">
-              <button type="button" class="btn btn-secondary btn-sm" onclick="toggleLinkInvoiceCreateForm(false)">Back</button>
-              <button type="button" class="btn btn-primary btn-sm" onclick="saveLinkInvoiceOnTheFly()"><i data-lucide="save"></i> Save & Link Invoice</button>
-            </div>
+          <div id="invoice-num-suggestions-box" class="card-sm-inset" style="margin-top: 1rem;">
+            <div class="text-muted" style="font-size:0.85rem; padding: 0.75rem 0;">Loading previous invoice numbers…</div>
+          </div>
+
+          <div style="display: flex; gap: 0.5rem; margin-top: 1.25rem; justify-content: flex-end;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="closeAddInvoiceNumberModal()">Cancel</button>
           </div>
         </div>
       </div>
@@ -911,7 +822,6 @@
   <?!= include('Scripts'); ?>
   <?!= include('ClientController'); ?>
   <?!= include('OrderController'); ?>
-  <?!= include('InvoiceController'); ?>
   <?!= include('SlipController'); ?>
   <?!= include('PdfGenerator'); ?>
 
@@ -919,7 +829,6 @@
   <script>
     document.getElementById('slip-date').valueAsDate = new Date();
     if (document.getElementById('order-date')) document.getElementById('order-date').valueAsDate = new Date();
-    if (document.getElementById('invoice-date')) document.getElementById('invoice-date').valueAsDate = new Date();
   </script>
 </body>
 </html>

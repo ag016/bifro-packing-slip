@@ -4,18 +4,17 @@
  * Form management, item grids, searching, filtering, and previewing
  */
 
-function addItemRow(name, qty, scrollToRow, orderId, invoiceId) {
+function addItemRow(name, qty, scrollToRow, orderId) {
   const container = $('#items-container');
   if (!container) return;
-  
+
   const row = document.createElement('div');
   row.className = 'item-row card-sm-inset animate-fade-in';
   row.dataset.orderId = orderId || '';
-  row.dataset.invoiceId = invoiceId || '';
-  
+
   // Use unique timestamp to coordinate names and labels
   const id = 'item-' + Date.now() + '-' + Math.floor(Math.random()*1000);
-  
+
   row.innerHTML = `
     <div class="field-group flex-3">
       <label for="${id}-name" class="label-inline">Product Description</label>
@@ -32,21 +31,21 @@ function addItemRow(name, qty, scrollToRow, orderId, invoiceId) {
       </button>
     </div>
   `;
-  
+
   container.appendChild(row);
   if (window.lucide) lucide.createIcons();
-  
-  if (orderId || invoiceId) {
+
+  if (orderId) {
     updateRowBalanceHint(id);
   }
-  
+
   if (scrollToRow !== false) {
     setTimeout(() => {
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
       highlightElement(row);
     }, 50);
   }
-  
+
   return row;
 }
 
@@ -87,32 +86,32 @@ function loadSuggestions(clientId) {
 function renderSuggestions() {
   const box = $('#suggestions-box');
   if (!box) return;
-  
+
   box.innerHTML = '<datalist id="suggestions-list"></datalist>';
   const list = $('#suggestions-list');
-  
+
   if (!suggestions.length) {
     box.style.display = 'none';
     return;
   }
-  
+
   box.style.display = 'block';
-  
+
   // Create chips for quick clicking
   const chipContainer = document.createElement('div');
   chipContainer.className = 'chip-container';
-  
+
   const title = document.createElement('div');
   title.className = 'suggestions-title';
   title.innerHTML = '<i data-lucide="sparkles" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Previously ordered items (click to add):';
   chipContainer.appendChild(title);
-  
+
   suggestions.forEach(s => {
     // Add to datalist for input autocompletes
     const opt = document.createElement('option');
     opt.value = s;
     list.appendChild(opt);
-    
+
     // Add as quick chip
     const chip = document.createElement('span');
     chip.className = 'chip-suggestion';
@@ -136,7 +135,7 @@ function renderSuggestions() {
     };
     chipContainer.appendChild(chip);
   });
-  
+
   box.appendChild(chipContainer);
   if (window.lucide) lucide.createIcons();
 }
@@ -147,21 +146,21 @@ function gatherItems() {
   let valid = true;
   let firstIncompleteRow = null;
   let firstIncompleteField = null;
-  
+
   rows.forEach((row, idx) => {
     const nameEl = row.querySelector('.item-name');
     const qtyEl = row.querySelector('.item-qty');
-    
+
     const name = nameEl ? nameEl.value.trim() : '';
     const qtyVal = qtyEl ? qtyEl.value : '';
     const quantity = parseInt(qtyVal, 10);
-    
+
     if (!name && !qtyVal) {
       // Completely blank row: mark for removal
       row.dataset.removeBlank = 'true';
       return;
     }
-    
+
     if (!name) {
       row.dataset.removeBlank = 'false';
       toast(`Row ${idx + 1}: Product description is required.`, 'danger');
@@ -171,7 +170,7 @@ function gatherItems() {
       }
       return;
     }
-    
+
     if (isNaN(quantity) || quantity <= 0) {
       row.dataset.removeBlank = 'false';
       toast(`Row ${idx + 1}: Quantity must be a valid positive integer.`, 'danger');
@@ -182,23 +181,22 @@ function gatherItems() {
       valid = false;
       return;
     }
-    
+
     row.dataset.removeBlank = 'false';
     const orderId = row.dataset.orderId || '';
-    const invoiceId = row.dataset.invoiceId || '';
-    items.push({ name, quantity, orderId, invoiceId });
+    items.push({ name, quantity, orderId });
   });
-  
+
   // Remove blank rows from the DOM
   $$('#items-container .item-row[data-remove-blank="true"]').forEach(row => {
     row.remove();
   });
-  
+
   // If there are no items after cleanup, ensure at least one empty row remains for UX
   if (items.length === 0 && valid) {
     addItemRow('', 1, false);
   }
-  
+
   // Scroll to first incomplete row if any
   if (firstIncompleteRow) {
     setTimeout(() => {
@@ -208,7 +206,7 @@ function gatherItems() {
     }, 50);
     valid = false;
   }
-  
+
   return valid ? items : null;
 }
 
@@ -220,20 +218,19 @@ function startNewSlip() {
 function savePackingSlip() {
   const clientId = $('#slip-client').value;
   const slipDate = $('#slip-date').value;
-  const slipInvoice = $('#slip-invoice').value.trim();
   const slipNotes = $('#slip-notes').value.trim();
-  
+
   if (!slipDate) {
     toast('Date is required.', 'danger');
     return;
   }
-  
+
   if (!clientId) {
     toast('Please select a client or create a new one.', 'danger');
     $('#slip-client').focus();
     return;
   }
-  
+
   const client = {
     id: clientId === 'new' ? '' : clientId,
     name: $('#new-client-name').value.trim(),
@@ -241,20 +238,23 @@ function savePackingSlip() {
     phone: $('#new-client-phone').value.trim(),
     address: $('#new-client-address').value.trim()
   };
-  
+
   if (!client.name) {
     toast('Please fill in client name under Client Details', 'danger');
     $('#new-client-name').focus();
     return;
   }
-  
+
   const items = gatherItems();
   if (items === null) return; // validation failed inside gatherItems
   if (items.length === 0) {
     toast('Please add at least one product item.', 'danger');
     return;
   }
-  
+
+  // The chip-based UI is the single source of truth for invoice numbers.
+  const merged = invoiceNumbers.slice();
+
   const slip = {
     date: slipDate,
     clientId: client.id || '',
@@ -264,22 +264,23 @@ function savePackingSlip() {
     clientAddress: client.address || '',
     items: items,
     notes: slipNotes,
-    invoiceNumber: slipInvoice,
+    invoiceNumber: merged.join(', '),
+    invoiceNumbers: merged,
     linkedOrders: linkedOrderIds,
-    linkedInvoices: linkedInvoiceIds
+    linkedInvoices: merged.join(', ')
   };
-  
+
   if (currentSlip && currentSlip.slipCode) {
     slip.slipCode = currentSlip.slipCode;
   }
-  
+
   // Disable button to prevent double clicks
   const saveBtn = $('#btn-save-slip');
   if (saveBtn) {
     saveBtn.disabled = true;
     saveBtn.innerHTML = '<span class="spinner"></span> Saving...';
   }
-  
+
   // Always save/update client in backend first to keep client directory updated
   google.script.run
     .withSuccessHandler(savedClient => {
@@ -309,18 +310,26 @@ function doSaveSlip(slip) {
     .withSuccessHandler(saved => {
       currentSlip = saved;
       toast('Packing slip saved successfully: ' + saved.slipCode, 'success');
-      
+
       const printBtn = $('#btn-print-slip');
       if (printBtn) printBtn.style.display = 'inline-flex';
-      
+
       $('#slip-form-title').textContent = 'Packing Slip ' + saved.slipCode;
-      
+
       const saveBtn = $('#btn-save-slip');
       if (saveBtn) {
         saveBtn.disabled = false;
         saveBtn.innerHTML = 'Save Packing Slip';
       }
-      
+
+      // Reflect saved merged invoice numbers locally
+      if (Array.isArray(saved.invoiceNumbers)) {
+        invoiceNumbers = saved.invoiceNumbers.slice();
+      }
+      renderInvoiceNumberTags();
+      const quick = $('#slip-invoice-quick');
+      if (quick) quick.value = '';
+
       loadClients();
       loadHome();
     })
@@ -337,7 +346,11 @@ function doSaveSlip(slip) {
 
 function printCurrentSlip() {
   if (currentSlip) {
-    generatePDF(currentSlip, settings);
+    let s = currentSlip;
+    if (!Array.isArray(s.invoiceNumbers)) {
+      s = Object.assign({}, currentSlip, { invoiceNumbers: invoiceNumbers.slice() });
+    }
+    generatePDF(s, settings);
   } else {
     toast('No slip is currently loaded to print.', 'warning');
   }
@@ -358,18 +371,36 @@ function resetSlipForm() {
   addItemRow('', 1, false);
   toggleNewClient();
   currentSlip = null;
-  
+
   // Clear linkage data
   linkedOrderIds = [];
-  linkedInvoiceIds = [];
+  invoiceNumbers = [];
   currentLinkedStats = {};
   renderLinkedTags();
-  
+  renderInvoiceNumberTags();
+  const quick = $('#slip-invoice-quick');
+  if (quick) quick.value = '';
+
   const printBtn = $('#btn-print-slip');
   if (printBtn) printBtn.style.display = 'none';
-  
+
   $('#slip-form-title').textContent = 'Create New Packing Slip';
   $('#slip-date').valueAsDate = new Date();
+}
+
+function hydrateInvoiceNumbersFromSlip(slip) {
+  if (!slip) return [];
+  if (Array.isArray(slip.invoiceNumbers)) {
+    return slip.invoiceNumbers
+      .map(v => String(v || '').trim())
+      .filter(Boolean)
+      .filter((v, i, arr) => arr.indexOf(v) === i);
+  }
+  return (typeof slip.invoiceNumber === 'string' ? slip.invoiceNumber : '')
+    .split(',')
+    .map(s => String(s || '').trim())
+    .filter(Boolean)
+    .filter((v, i, arr) => arr.indexOf(v) === i);
 }
 
 function loadSlipForEdit(slipCode) {
@@ -378,12 +409,11 @@ function loadSlipForEdit(slipCode) {
     toast('Slip not found for editing', 'danger');
     return;
   }
-  
+
   resetSlipForm();
   currentSlip = slip;
-  
+
   $('#slip-date').value = slip.date;
-  $('#slip-invoice').value = slip.invoiceNumber || '';
   populateClientSelect();
   if (slip.clientId) {
     $('#slip-client').value = slip.clientId;
@@ -394,27 +424,32 @@ function loadSlipForEdit(slipCode) {
     if (slip.clientAddress !== undefined) $('#new-client-address').value = slip.clientAddress || '';
   }
   $('#slip-notes').value = slip.notes || '';
-  
-  // Load Linked Documents
+
+  // Linked Orders
   linkedOrderIds = (slip.linkedOrders || '').split(',').map(s => s.trim()).filter(Boolean);
-  linkedInvoiceIds = (slip.linkedInvoices || '').split(',').map(s => s.trim()).filter(Boolean);
+
+  // Free-floating invoice numbers
+  invoiceNumbers = hydrateInvoiceNumbersFromSlip(slip);
   renderLinkedTags();
-  
+  renderInvoiceNumberTags();
+  const quick0 = $('#slip-invoice-quick');
+  if (quick0) quick0.value = '';
+
   refreshLinkedStats(() => {
     $('#items-container').innerHTML = '';
     if (slip.items && slip.items.length) {
-      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId, it.invoiceId));
+      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId));
     } else {
       addItemRow('', 1, false);
     }
   });
-  
+
   loadSuggestions(slip.clientId);
   $('#slip-form-title').textContent = 'Edit Packing Slip (Updates #' + slip.slipCode + ')';
-  
+
   const printBtn = $('#btn-print-slip');
   if (printBtn) printBtn.style.display = 'inline-flex';
-  
+
   showPage('new-slip');
 }
 
@@ -424,12 +459,11 @@ function duplicateSlipByCode(slipCode) {
     toast('Slip not found for duplicating', 'danger');
     return;
   }
-  
+
   resetSlipForm();
   currentSlip = null; // null slipCode ensures it saves as a brand new copy with a new sequential ID
-  
+
   $('#slip-date').valueAsDate = new Date();
-  $('#slip-invoice').value = slip.invoiceNumber || '';
   populateClientSelect();
   if (slip.clientId) {
     $('#slip-client').value = slip.clientId;
@@ -441,26 +475,30 @@ function duplicateSlipByCode(slipCode) {
   }
   $('#slip-notes').value = slip.notes || '';
 
-  // Load Linked Documents for Duplicate Copy
+  // Linked Orders
   linkedOrderIds = (slip.linkedOrders || '').split(',').map(s => s.trim()).filter(Boolean);
-  linkedInvoiceIds = (slip.linkedInvoices || '').split(',').map(s => s.trim()).filter(Boolean);
+
+  invoiceNumbers = hydrateInvoiceNumbersFromSlip(slip);
   renderLinkedTags();
-  
+  renderInvoiceNumberTags();
+  const quick1 = $('#slip-invoice-quick');
+  if (quick1) quick1.value = '';
+
   refreshLinkedStats(() => {
     $('#items-container').innerHTML = '';
     if (slip.items && slip.items.length) {
-      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId, it.invoiceId));
+      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId));
     } else {
       addItemRow('', 1, false);
     }
   });
-  
+
   loadSuggestions(slip.clientId);
   $('#slip-form-title').textContent = 'New Packing Slip (Duplicated from #' + slip.slipCode + ')';
-  
+
   const printBtn = $('#btn-print-slip');
   if (printBtn) printBtn.style.display = 'none';
-  
+
   showPage('new-slip');
 }
 
@@ -475,7 +513,7 @@ function loadSlips() {
       .withFailureHandler(handleError)
       .getPackingSlips();
   };
-  
+
   if (!clients.length) {
     google.script.run
       .withSuccessHandler(list => {
@@ -496,7 +534,7 @@ function populateFilterClient() {
   if (!sel) return;
   const current = sel.value;
   sel.innerHTML = '<option value="">All clients</option>';
-  
+
   clients.forEach(c => {
     const opt = document.createElement('option');
     opt.value = c.id;
@@ -512,16 +550,16 @@ function renderSlips() {
   const from = $('#filter-from').value;
   const to = $('#filter-to').value;
   const tbody = $('#slips-table tbody');
-  
+
   if (!tbody) return;
   tbody.innerHTML = '';
-  
+
   // Filter active slips and revision slips
   const activeSlips = slips.filter(s => s.slipCode.indexOf('-rev') === -1);
   const revisionSlips = slips.filter(s => s.slipCode.indexOf('-rev') !== -1);
-  
+
   let filtered = activeSlips.slice().reverse();
-  
+
   if (term) {
     filtered = filtered.filter(s => {
       const itemNames = (s.items || []).map(it => String(it.name || '')).join(' ');
@@ -538,15 +576,15 @@ function renderSlips() {
       return searchable.includes(term);
     });
   }
-  
+
   if (clientFilter) {
     filtered = filtered.filter(s => s.clientId === clientFilter);
   }
-  
+
   if (from) {
     filtered = filtered.filter(s => s.date >= from);
   }
-  
+
   if (to) {
     filtered = filtered.filter(s => s.date <= to);
   }
@@ -566,14 +604,18 @@ function renderSlips() {
 
   if (invoiceNumFilter) {
     filtered = filtered.filter(s => {
-      var invoicesStr = String(s.linkedInvoices || '').toLowerCase();
-      var itemsMatch = (s.items || []).some(function(it) {
-        return String(it.invoiceId || '').toLowerCase().indexOf(invoiceNumFilter) !== -1;
+      // Search across the unified invoiceNumbers array (preferred) AND the
+      // legacy single-string fields so old data is still searchable.
+      var arr = Array.isArray(s.invoiceNumbers) ? s.invoiceNumbers : [];
+      var anyMatch = arr.some(function (n) {
+        return String(n || '').toLowerCase().indexOf(invoiceNumFilter) !== -1;
       });
-      return invoicesStr.indexOf(invoiceNumFilter) !== -1 || itemsMatch;
+      var legacyHit = String(s.invoiceNumber || '').toLowerCase().indexOf(invoiceNumFilter) !== -1
+        || String(s.linkedInvoices || '').toLowerCase().indexOf(invoiceNumFilter) !== -1;
+      return anyMatch || legacyHit;
     });
   }
-  
+
   const cardsContainer = $('#slips-cards-container');
   if (cardsContainer) cardsContainer.innerHTML = '';
 
@@ -584,13 +626,13 @@ function renderSlips() {
     }
     return;
   }
-  
+
   filtered.forEach(s => {
     // Check if this slip has past revisions
     const revisions = revisionSlips.filter(r => r.slipCode.startsWith(s.slipCode + '-rev'));
     const isEdited = revisions.length > 0;
     const editedBadge = isEdited ? `<span class="badge badge-warning cursor-pointer" onclick="viewSlipByCode('${s.slipCode}')" style="margin-left: 6px; font-size: 0.7rem; font-weight: bold; background-color: rgba(245,158,11,0.15); color: var(--accent); padding: 2px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 2px;" title="Click to view history"><i data-lucide="history" style="width:10px;height:10px;"></i> Edited</span>` : '';
-    
+
     // 1. Render desktop table row
     const tr = document.createElement('tr');
     tr.className = 'table-row-animate';
@@ -631,7 +673,7 @@ function renderSlips() {
       </td>
     `;
     tbody.appendChild(tr);
-    
+
     // 2. Render mobile card
     if (cardsContainer) {
       const card = document.createElement('div');
@@ -680,7 +722,7 @@ function renderSlips() {
       cardsContainer.appendChild(card);
     }
   });
-  
+
   if (window.lucide) lucide.createIcons();
 }
 
@@ -688,23 +730,23 @@ function viewSlipByCode(slipCode) {
   // Find the exact slip (could be active or a revision)
   const s = slips.find(x => x.slipCode === slipCode);
   if (!s) return;
-  
+
   // Find root code and associated slips
   const rootCode = slipCode.split('-rev')[0];
   const activeSlip = slips.find(x => x.slipCode === rootCode);
   const revisionSlips = slips.filter(x => x.slipCode.indexOf('-rev') !== -1);
   const revisions = revisionSlips.filter(r => r.slipCode.startsWith(rootCode + '-rev'));
-  
+
   const getTimestamp = r => Number(r.slipCode.split('-rev')[1] || 0);
   revisions.sort((a, b) => getTimestamp(b) - getTimestamp(a));
-  
+
   const isRevision = slipCode.indexOf('-rev') !== -1;
-  
+
   $('#modal-title').textContent = isRevision ? 'Packing Slip Revision Detail' : 'Packing Slip Detail';
   const body = $('#modal-body');
-  
+
   let html = '';
-  
+
   // Warning Banner for Archived Versions
   if (isRevision) {
     const revTime = getTimestamp(s);
@@ -715,7 +757,14 @@ function viewSlipByCode(slipCode) {
       </div>
     `;
   }
-  
+
+  // Normalise invoice numbers + linked orders for display
+  const invNumbers = Array.isArray(s.invoiceNumbers) && s.invoiceNumbers.length
+    ? s.invoiceNumbers
+    : hydrateInvoiceNumbersFromSlip(s);
+  const invDisplay = invNumbers.join(', ');
+  const linkedOrdersStr = (s.linkedOrders || '').toString().split(',').map(x => x.trim()).filter(Boolean).join(', ');
+
   html += `
     <div class="preview-slip-document animate-scale-in">
       <!-- Document Header -->
@@ -740,10 +789,16 @@ function viewSlipByCode(slipCode) {
             <span class="meta-label">Date:</span>
             <span class="meta-value">${formatDate(s.date)}</span>
           </div>
-          ${s.invoiceNumber ? `
+          ${linkedOrdersStr ? `
+          <div class="preview-meta-row">
+            <span class="meta-label">Order #:</span>
+            <span class="meta-value bold-badge">${escapeHtml(linkedOrdersStr)}</span>
+          </div>
+          ` : ''}
+          ${invDisplay ? `
           <div class="preview-meta-row">
             <span class="meta-label">Invoice #:</span>
-            <span class="meta-value">${escapeHtml(s.invoiceNumber)}</span>
+            <span class="meta-value bold-badge">${escapeHtml(invDisplay)}</span>
           </div>
           ` : ''}
           <div class="preview-meta-row">
@@ -758,10 +813,18 @@ function viewSlipByCode(slipCode) {
           ` : ''}
         </div>
       </div>
-      
+
       <!-- Divider -->
       <hr class="preview-divider">
-      
+
+      <!-- Linked documents strip (always shown if present, even if metadata line is hidden) -->
+      ${(linkedOrdersStr || invDisplay) ? `
+      <div class="preview-reference-strip" style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom: 1.25rem;">
+        ${linkedOrdersStr ? linkedOrdersStr.split(',').map(x => x.trim()).filter(Boolean).map(x => `<span class="badge badge-secondary" style="display:inline-flex; align-items:center; gap:6px;"><i data-lucide="shopping-bag" style="width:12px;height:12px;"></i> Order ${escapeHtml(x)}</span>`).join('') : ''}
+        ${invDisplay ? invNumbers.map(x => `<span class="badge" style="display:inline-flex; align-items:center; gap:6px; background-color: var(--info-soft); color: var(--info); border-color: rgba(59,130,246,0.2);"><i data-lucide="file-text" style="width:12px;height:12px;"></i> Invoice ${escapeHtml(x)}</span>`).join('') : ''}
+      </div>
+      ` : ''}
+
       <!-- Shipping Details -->
       <div class="preview-shipping">
         <h5 class="preview-section-title">Deliver To:</h5>
@@ -772,7 +835,7 @@ function viewSlipByCode(slipCode) {
           ${s.clientPhone ? `<p class="client-phone"><i data-lucide="phone" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> ${escapeHtml(s.clientPhone)}</p>` : ''}
         </div>
       </div>
-      
+
       <!-- Items Table -->
       <div class="preview-items">
         <h5 class="preview-section-title">Package Contents:</h5>
@@ -785,7 +848,7 @@ function viewSlipByCode(slipCode) {
           </thead>
           <tbody>
   `;
-  
+
   (s.items || []).forEach(it => {
     html += `
       <tr>
@@ -794,7 +857,7 @@ function viewSlipByCode(slipCode) {
       </tr>
     `;
   });
-  
+
   html += `
           </tbody>
           <tfoot>
@@ -805,7 +868,7 @@ function viewSlipByCode(slipCode) {
           </tfoot>
         </table>
       </div>
-      
+
       <!-- Notes Section -->
       ${s.notes ? `
         <div class="preview-notes">
@@ -813,14 +876,14 @@ function viewSlipByCode(slipCode) {
           <div class="notes-card text-pre-line">${escapeHtml(s.notes)}</div>
         </div>
       ` : ''}
-      
+
       <!-- Footer -->
       <div class="preview-footer">
         <p>Thank you for choosing ${escapeHtml(settings.CompanyName || 'My Company')}!</p>
       </div>
     </div>
   `;
-  
+
   // Revision History Navigator Panel (Inside modal body)
   if (activeSlip && (revisions.length > 0)) {
     html += `
@@ -829,7 +892,7 @@ function viewSlipByCode(slipCode) {
           <i data-lucide="history"></i> Revision History
         </h3>
         <div class="revision-list">
-          
+
           <!-- Current Active Version Row -->
           <div class="revision-row ${!isRevision ? 'active' : ''}">
             <div class="revision-info">
@@ -842,7 +905,7 @@ function viewSlipByCode(slipCode) {
               </button>
             ` : '<span style="color: var(--accent); font-weight: 600; font-size: 0.75rem;">Viewing Active</span>'}
           </div>
-          
+
           <!-- Past Revisions Rows -->
           ${revisions.map((rev, index) => {
             const revTime = getTimestamp(rev);
@@ -861,12 +924,12 @@ function viewSlipByCode(slipCode) {
               </div>
             `;
           }).join('')}
-          
+
         </div>
       </div>
     `;
   }
-  
+
   html += `
     <!-- Action controls outside document -->
     <div class="modal-actions-bar">
@@ -878,7 +941,7 @@ function viewSlipByCode(slipCode) {
       </button>
     </div>
   `;
-  
+
   body.innerHTML = html;
   $('#modal').classList.add('active');
   if (window.lucide) lucide.createIcons();
@@ -903,7 +966,7 @@ function formatDateTime(d) {
   if (!d) return '';
   const date = typeof d === 'number' ? new Date(d) : new Date(d);
   if (isNaN(date.getTime())) return String(d);
-  
+
   return date.toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
@@ -941,7 +1004,7 @@ function toggleRowDropdown(event, code) {
   event.stopPropagation();
   const dropdown = document.getElementById('dropdown-' + code);
   if (!dropdown) return;
-  
+
   // Close all other open dropdowns first
   const allDropdowns = document.querySelectorAll('.dropdown-menu-content');
   allDropdowns.forEach(d => {
@@ -949,7 +1012,7 @@ function toggleRowDropdown(event, code) {
       d.style.display = 'none';
     }
   });
-  
+
   // Toggle the clicked dropdown
   if (dropdown.style.display === 'block') {
     dropdown.style.display = 'none';
@@ -969,11 +1032,11 @@ document.addEventListener('click', function(event) {
 });
 
 /* ------------------------------------------------------------------
- * Orders & Invoices Linking Logic
+ * Orders & Invoice Numbers Linking Logic
  * ------------------------------------------------------------------ */
 
 let linkedOrderIds = [];
-let linkedInvoiceIds = [];
+let invoiceNumbers = []; // free-floating invoice strings
 let currentLinkedStats = {};
 
 function renderLinkedTags() {
@@ -986,31 +1049,70 @@ function renderLinkedTags() {
       linkedOrderIds.forEach(id => {
         const tag = document.createElement('span');
         tag.className = 'link-tag';
-        tag.innerHTML = `${escapeHtml(id)} <button type="button" onclick="unlinkOrder('${id}')" title="Unlink Order">&times;</button>`;
+        tag.dataset.orderId = id;
+        tag.innerHTML = `${escapeHtml(id)} <button type="button" data-action="unlink-order" data-order-id="${escapeHtml(id)}" title="Unlink Order">&times;</button>`;
         oContainer.appendChild(tag);
-      });
-    }
-  }
-
-  const iContainer = $('#linked-invoices-tags');
-  if (iContainer) {
-    if (!linkedInvoiceIds.length) {
-      iContainer.innerHTML = '<span class="text-muted" style="font-size:0.85rem; font-style:italic;">No invoices linked</span>';
-    } else {
-      iContainer.innerHTML = '';
-      linkedInvoiceIds.forEach(id => {
-        const tag = document.createElement('span');
-        tag.className = 'link-tag';
-        tag.innerHTML = `${escapeHtml(id)} <button type="button" onclick="unlinkInvoice('${id}')" title="Unlink Invoice">&times;</button>`;
-        iContainer.appendChild(tag);
       });
     }
   }
 }
 
+function normalizeInvoiceString(s) {
+  const v = String(s == null ? '' : s).trim();
+  return v;
+}
+
+function addInvoiceNumberTag(value) {
+  const v = normalizeInvoiceString(value);
+  if (!v) return false;
+  if (invoiceNumbers.indexOf(v) !== -1) return false;
+  invoiceNumbers.push(v);
+  return true; // caller is responsible for calling renderInvoiceNumberTags()
+}
+
+function removeInvoiceNumberTag(value) {
+  const before = invoiceNumbers.length;
+  invoiceNumbers = invoiceNumbers.filter(v => v !== value);
+  return invoiceNumbers.length !== before;
+}
+
+function renderInvoiceNumberTags() {
+  const container = $('#slip-invoice-numbers-tags');
+  if (!container) return;
+  if (!invoiceNumbers.length) {
+    container.innerHTML = '<span class="text-muted" style="font-size:0.85rem; font-style:italic;">No invoice numbers</span>';
+    return;
+  }
+  container.innerHTML = '';
+  invoiceNumbers.forEach(v => {
+    const tag = document.createElement('span');
+    tag.className = 'link-tag';
+    tag.dataset.invoiceNumber = v;
+    tag.innerHTML = `${escapeHtml(v)} <button type="button" data-action="remove-invoice" data-invoice="${escapeHtml(v)}" title="Remove invoice number">&times;</button>`;
+    container.appendChild(tag);
+  });
+}
+
+// Event delegation for chip-tag remove buttons. Using data-attributes instead
+// of inline `onclick="…('value with potentially special chars')"` so invoice
+// numbers / order IDs with quotes or other characters remove cleanly.
+(function attachChipDelegation() {
+  document.addEventListener('click', function (event) {
+    const btn = event.target.closest && event.target.closest('button[data-action]');
+    if (!btn) return;
+    const action = btn.getAttribute('data-action');
+    if (action === 'remove-invoice') {
+      removeInvoiceNumberTag(btn.getAttribute('data-invoice'));
+      renderInvoiceNumberTags();
+    } else if (action === 'unlink-order') {
+      unlinkOrder(btn.getAttribute('data-order-id'));
+    }
+  });
+})();
+
 function refreshLinkedStats(callback) {
   const clientId = $('#slip-client').value;
-  if (!clientId || clientId === 'new' || (!linkedOrderIds.length && !linkedInvoiceIds.length)) {
+  if (!clientId || clientId === 'new' || !linkedOrderIds.length) {
     currentLinkedStats = {};
     updateAllRowBalanceHints();
     if (typeof callback === 'function') callback();
@@ -1024,7 +1126,7 @@ function refreshLinkedStats(callback) {
       if (typeof callback === 'function') callback();
     })
     .withFailureHandler(handleError)
-    .getLinkedDeliveryStats(clientId, linkedOrderIds, linkedInvoiceIds);
+    .getLinkedDeliveryStats(clientId, linkedOrderIds);
 }
 
 function updateAllRowBalanceHints() {
@@ -1042,26 +1144,24 @@ function updateRowBalanceHint(id) {
   const nameEl = document.getElementById(id + '-name');
   const qtyEl = document.getElementById(id + '-qty');
   const container = document.getElementById(id + '-balance-container');
-  
+
   if (!nameEl || !qtyEl || !container) return;
   container.innerHTML = '';
-  
+
   const name = nameEl.value.trim();
   const qty = parseInt(qtyEl.value, 10) || 0;
   const row = nameEl.closest('.item-row');
-  
+
   const oId = row.dataset.orderId;
-  const invId = row.dataset.invoiceId;
-  
-  if (!oId && !invId) return; // Not linked
+  if (!oId) return; // Not linked
 
   const stat = currentLinkedStats[name];
   if (!stat) {
-    container.innerHTML = '<span style="color:var(--text-muted); font-size:0.75rem;">Not in linked Order/Invoice items</span>';
+    container.innerHTML = '<span style="color:var(--text-muted); font-size:0.75rem;">Not in linked Order items</span>';
     return;
   }
 
-  const ordered = stat.ordered || stat.invoiced || 0;
+  const ordered = stat.ordered || 0;
   const prevDelivered = stat.delivered || 0;
   const totalDelivered = prevDelivered + qty;
 
@@ -1096,25 +1196,25 @@ function openLinkOrderModal() {
     toast('Please select a registered client first.', 'warning');
     return;
   }
-  
+
   $('#link-order-modal').classList.add('active');
   toggleLinkOrderCreateForm(false);
-  
+
   // List client's orders
   const tbody = $('#link-order-table tbody');
   tbody.innerHTML = '<tr><td colspan="4" class="empty">Loading orders...</td></tr>';
-  
+
   google.script.run
     .withSuccessHandler(list => {
       orders = list || [];
       const clientOrders = orders.filter(o => o.clientId === clientId && linkedOrderIds.indexOf(o.id) === -1);
-      
+
       tbody.innerHTML = '';
       if (!clientOrders.length) {
         tbody.innerHTML = '<tr><td colspan="4" class="empty">No unlinked orders found for this client.</td></tr>';
         return;
       }
-      
+
       clientOrders.forEach(o => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -1136,50 +1236,83 @@ function closeLinkOrderModal() {
   $('#link-order-modal').classList.remove('active');
 }
 
-function openLinkInvoiceModal() {
+let lastInvoiceModalTrigger = null;
+
+function openAddInvoiceNumberModal(triggerEl) {
   const clientId = $('#slip-client').value;
   if (!clientId || clientId === 'new') {
     toast('Please select a registered client first.', 'warning');
     return;
   }
-  
-  $('#link-invoice-modal').classList.add('active');
-  toggleLinkInvoiceCreateForm(false);
-  
-  // List client's invoices
-  const tbody = $('#link-invoice-table tbody');
-  tbody.innerHTML = '<tr><td colspan="4" class="empty">Loading invoices...</td></tr>';
-  
+  lastInvoiceModalTrigger = triggerEl || (document.activeElement && document.activeElement.closest('button')) || document.activeElement;
+  $('#link-invoice-num-modal').classList.add('active');
+  const input = $('#add-invoice-num-input');
+  if (input) {
+    input.value = '';
+    setTimeout(() => input.focus(), 50);
+  }
+  // Load smart suggestions from the backend (any invoice number ever used by
+  // orders or packing slips for this client).
   google.script.run
     .withSuccessHandler(list => {
-      invoices = list || [];
-      const clientInvoices = invoices.filter(inv => inv.clientId === clientId && linkedInvoiceIds.indexOf(inv.id) === -1);
-      
-      tbody.innerHTML = '';
-      if (!clientInvoices.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="empty">No unlinked invoices found for this client.</td></tr>';
-        return;
-      }
-      
-      clientInvoices.forEach(inv => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td style="padding: 0.5rem 0.25rem;"><strong>${escapeHtml(inv.id)}</strong></td>
-          <td style="padding: 0.5rem 0.25rem;">${formatDate(inv.date)}</td>
-          <td style="padding: 0.5rem 0.25rem;"><span class="badge">${escapeHtml(inv.status)}</span></td>
-          <td style="padding: 0.5rem 0.25rem; text-align: right;">
-            <button type="button" class="btn btn-primary btn-xs" onclick="linkInvoice('${inv.id}')">Link</button>
-          </td>
-        `;
-        tbody.appendChild(tr);
-      });
+      renderInvoiceNumSuggestions(list || []);
     })
     .withFailureHandler(handleError)
-    .getInvoices();
+    .getClientInvoiceNumbers(clientId);
 }
 
-function closeLinkInvoiceModal() {
-  $('#link-invoice-modal').classList.remove('active');
+function renderInvoiceNumSuggestions(list) {
+  const box = $('#invoice-num-suggestions-box');
+  if (!box) return;
+  const available = (list || []).filter(v => invoiceNumbers.indexOf(v) === -1);
+  box.innerHTML = '';
+  if (!available.length) {
+    box.innerHTML = '<div class="text-muted" style="font-size:0.85rem; padding: 0.75rem 0;">No prior invoice numbers found for this client — type a new one above.</div>';
+    return;
+  }
+  const title = document.createElement('div');
+  title.className = 'suggestions-title';
+  title.innerHTML = '<i data-lucide="sparkles" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Previously used invoice numbers (click to add):';
+  box.appendChild(title);
+  const chipWrap = document.createElement('div');
+  available.forEach(v => {
+    const chip = document.createElement('span');
+    chip.className = 'chip-suggestion';
+    chip.textContent = v;
+    chip.onclick = () => {
+      if (addInvoiceNumberTag(v)) {
+        closeAddInvoiceNumberModal();
+      }
+    };
+    chipWrap.appendChild(chip);
+  });
+  box.appendChild(chipWrap);
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeAddInvoiceNumberModal() {
+  const m = $('#link-invoice-num-modal');
+  if (m) m.classList.remove('active');
+  if (lastInvoiceModalTrigger && typeof lastInvoiceModalTrigger.focus === 'function') {
+    try { lastInvoiceModalTrigger.focus(); } catch (e) {}
+  }
+  lastInvoiceModalTrigger = null;
+}
+
+function saveAddInvoiceNumber() {
+  const input = $('#add-invoice-num-input');
+  if (!input) return;
+  const v = normalizeInvoiceString(input.value);
+  if (!v) {
+    toast('Please enter an invoice number.', 'warning');
+    return;
+  }
+  if (addInvoiceNumberTag(v)) {
+        renderInvoiceNumberTags();
+        closeAddInvoiceNumberModal();
+  } else {
+    toast('That invoice number is already on this slip.', 'info');
+  }
 }
 
 function toggleLinkOrderCreateForm(show) {
@@ -1189,16 +1322,10 @@ function toggleLinkOrderCreateForm(show) {
     $('#link-order-date').valueAsDate = new Date();
     $('#link-order-items-container').innerHTML = '';
     addLinkOrderItemRow('', 1);
-  }
-}
-
-function toggleLinkInvoiceCreateForm(show) {
-  $('#link-invoice-list-section').style.display = show ? 'none' : 'block';
-  $('#link-invoice-create-section').style.display = show ? 'block' : 'none';
-  if (show) {
-    $('#link-invoice-date').valueAsDate = new Date();
-    $('#link-invoice-items-container').innerHTML = '';
-    addLinkInvoiceItemRow('', 1);
+    // Pre-fill the on-the-fly order invoice numbers with whatever's currently
+    // queued on the packing slip (so users can carry numbers across).
+    const tgtField = $('#link-order-invoice-numbers');
+    if (tgtField) tgtField.value = invoiceNumbers.join(', ');
   }
 }
 
@@ -1219,28 +1346,12 @@ function addLinkOrderItemRow(name, qty) {
   if (window.lucide) lucide.createIcons();
 }
 
-function addLinkInvoiceItemRow(name, qty) {
-  const container = $('#link-invoice-items-container');
-  if (!container) return;
-  const row = document.createElement('div');
-  row.className = 'item-row card-sm-inset';
-  row.style.padding = '0.5rem';
-  row.style.marginBottom = '0.5rem';
-  row.innerHTML = `
-    <input type="text" class="item-name" placeholder="Item name..." value="${escapeHtml(name)}" style="flex:2; padding:0.25rem;" required>
-    <input type="number" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty}" style="flex:1; padding:0.25rem;" required>
-    <button type="button" class="btn-icon btn-danger-soft" onclick="this.closest('.item-row').remove()" style="padding:0.25rem;"><i data-lucide="trash-2" style="width:12px; height:12px;"></i></button>
-  `;
-  container.appendChild(row);
-  if (window.lucide) lucide.createIcons();
-}
-
 // Link commands
 function linkOrder(orderId) {
   if (linkedOrderIds.indexOf(orderId) !== -1) return;
   linkedOrderIds.push(orderId);
   renderLinkedTags();
-  
+
   // Pull items of the linked order
   google.script.run
     .withSuccessHandler(list => {
@@ -1273,9 +1384,14 @@ function linkOrder(orderId) {
               });
               const remaining = Math.max(0, ordered - delivered);
               if (remaining > 0 || delivered === 0) {
-                addItemRow(item.name, remaining, false, orderId, '');
+                addItemRow(item.name, remaining, false, orderId);
               }
             });
+            // Auto-pull the order's invoice numbers onto the slip if not already present
+            if (Array.isArray(order.invoiceNumbers)) {
+              order.invoiceNumbers.forEach(addInvoiceNumberTag);
+            }
+            renderInvoiceNumberTags();
             refreshLinkedStats();
             closeLinkOrderModal();
           })
@@ -1291,7 +1407,7 @@ function linkOrder(orderId) {
 function unlinkOrder(orderId) {
   linkedOrderIds = linkedOrderIds.filter(id => id !== orderId);
   renderLinkedTags();
-  
+
   // Remove items in items-container belonging to this orderId
   const rows = $$('#items-container .item-row');
   rows.forEach(row => {
@@ -1299,91 +1415,20 @@ function unlinkOrder(orderId) {
       row.remove();
     }
   });
-  
+
   // If container became empty, add one blank row
   if ($$('#items-container .item-row').length === 0) {
     addItemRow('', 1, false);
   }
-  
+
   refreshLinkedStats();
 }
 
-function linkInvoice(invoiceId) {
-  if (linkedInvoiceIds.indexOf(invoiceId) !== -1) return;
-  linkedInvoiceIds.push(invoiceId);
-  renderLinkedTags();
-
-  // Pull items of the linked invoice
-  google.script.run
-    .withSuccessHandler(list => {
-      invoices = list || [];
-      const invoice = invoices.find(inv => inv.id === invoiceId);
-      if (invoice && Array.isArray(invoice.items)) {
-        const rows = $$('#items-container .item-row');
-        if (rows.length === 1) {
-          const name = rows[0].querySelector('.item-name').value.trim();
-          if (!name) rows[0].remove();
-        }
-
-        // Pull active slips to check remaining balances
-        google.script.run
-          .withSuccessHandler(slipsList => {
-            slips = slipsList || [];
-            invoice.items.forEach(item => {
-              const itemName = String(item.name || '').trim();
-              const ordered = Number(item.quantity || 0);
-              let delivered = 0;
-              slips.forEach(s => {
-                if (s.slipCode.indexOf('-rev') === -1) {
-                  (s.items || []).forEach(it => {
-                    if (String(it.name || '').trim() === itemName && it.invoiceId === invoiceId) {
-                      delivered += Number(it.quantity || 0);
-                    }
-                  });
-                }
-              });
-              const remaining = Math.max(0, ordered - delivered);
-              if (remaining > 0 || delivered === 0) {
-                addItemRow(item.name, remaining, false, '', invoiceId);
-              }
-            });
-            refreshLinkedStats();
-            closeLinkInvoiceModal();
-          })
-          .getPackingSlips();
-      } else {
-        refreshLinkedStats();
-        closeLinkInvoiceModal();
-      }
-    })
-    .getInvoices();
-}
-
-function unlinkInvoice(invoiceId) {
-  linkedInvoiceIds = linkedInvoiceIds.filter(id => id !== invoiceId);
-  renderLinkedTags();
-  
-  // Remove items in items-container belonging to this invoiceId
-  const rows = $$('#items-container .item-row');
-  rows.forEach(row => {
-    if (row.dataset.invoiceId === invoiceId) {
-      row.remove();
-    }
-  });
-  
-  // If container became empty, add one blank row
-  if ($$('#items-container .item-row').length === 0) {
-    addItemRow('', 1, false);
-  }
-  
-  refreshLinkedStats();
-}
-
-// On-the-fly savers
+// On-the-fly saver
 function saveLinkOrderOnTheFly() {
   const clientId = $('#slip-client').value;
   const date = $('#link-order-date').value;
-  
+
   if (!clientId || clientId === 'new') return;
   const clientObj = clients.find(c => c.id === clientId);
   if (!clientObj) return;
@@ -1410,12 +1455,21 @@ function saveLinkOrderOnTheFly() {
 
   if (!valid) return;
 
+  const invField = $('#link-order-invoice-numbers');
+  const invRaw = invField ? invField.value : '';
+  const invList = String(invRaw || '').split(',').map(s => s.trim()).filter(Boolean);
+  const seen = {};
+  const dedup = [];
+  invList.forEach(v => { if (v && !seen[v]) { seen[v] = true; dedup.push(v); } });
+
   const order = {
     date: date || new Date().toISOString().substring(0, 10),
     clientId: clientId,
     clientName: clientObj.name,
     items: items,
-    status: 'Pending'
+    status: 'Pending',
+    invoiceNumbers: dedup,
+    invoiceNumbersRaw: invRaw
   };
 
   google.script.run
@@ -1425,56 +1479,5 @@ function saveLinkOrderOnTheFly() {
     })
     .withFailureHandler(handleError)
     .saveOrder(order);
-}
-
-function saveLinkInvoiceOnTheFly() {
-  const clientId = $('#slip-client').value;
-  const date = $('#link-invoice-date').value || new Date().toISOString().substring(0, 10);
-  
-  if (!clientId || clientId === 'new') return;
-  const clientObj = clients.find(c => String(c.id).trim() === String(clientId).trim());
-  if (!clientObj) {
-    toast('Selected client not found in database.', 'danger');
-    return;
-  }
-
-  const rows = $$('#link-invoice-create-section .item-row');
-  const items = [];
-  let valid = true;
-
-  rows.forEach((row, idx) => {
-    const name = row.querySelector('.item-name').value.trim();
-    const qty = parseInt(row.querySelector('.item-qty').value, 10);
-    
-    if (!name) {
-      toast(`Row ${idx + 1}: Description is required.`, 'danger');
-      valid = false;
-      return;
-    }
-    if (isNaN(qty) || qty <= 0) {
-      toast(`Row ${idx + 1}: Quantity must be a valid positive integer.`, 'danger');
-      valid = false;
-      return;
-    }
-    items.push({ name, quantity: qty });
-  });
-
-  if (!valid) return;
-
-  const invoice = {
-    date: date,
-    clientId: clientId,
-    clientName: clientObj.name,
-    items: items,
-    status: 'Unpaid'
-  };
-
-  google.script.run
-    .withSuccessHandler(saved => {
-      toast('Invoice created and linked: ' + saved.id, 'success');
-      linkInvoice(saved.id);
-    })
-    .withFailureHandler(handleError)
-    .saveInvoice(invoice);
 }
 </script>

@@ -8,17 +8,37 @@ const SHEETS = {
   CLIENTS: 'Clients',
   PACKING_SLIPS: 'PackingSlips',
   USERS: 'Users',
-  ORDERS: 'Orders',
-  INVOICES: 'Invoices'
+  ORDERS: 'Orders'
 };
 
 const COUNTERS = {
   CLIENT: 'clientCounter',
   SLIP: 'slipCounter',
   USER: 'userCounter',
-  ORDER: 'orderCounter',
-  INVOICE: 'invoiceCounter'
+  ORDER: 'orderCounter'
 };
+
+// Invoices are no longer first-class records. They live as comma-separated
+// "Invoice Numbers" string lists on Orders (column 8) and free-floating on
+// PackingSlips (column 11 + column 16). Helpers below normalize both.
+function normalizeInvoiceNumberList(raw) {
+  if (raw === null || raw === undefined) return [];
+  var seen = {};
+  var out = [];
+  String(raw).split(',').forEach(function(part) {
+    var s = String(part || '').trim();
+    if (s && !seen[s]) {
+      seen[s] = true;
+      out.push(s);
+    }
+  });
+  return out;
+}
+
+function joinInvoiceNumberList(arr) {
+  if (!arr || !arr.length) return '';
+  return arr.map(function(s) { return String(s).trim(); }).filter(Boolean).join(', ');
+}
 
 /* ------------------------------------------------------------------
  * Licensing & Access Control
@@ -156,9 +176,7 @@ function initSheet(sheet, name) {
   } else if (name === SHEETS.USERS) {
     sheet.getRange(1, 1, 1, 5).setValues([['User ID', 'Name', 'Email', 'Role', 'Created At']]).setFontWeight('bold');
   } else if (name === SHEETS.ORDERS) {
-    sheet.getRange(1, 1, 1, 7).setValues([['Order ID', 'Date', 'Client ID', 'Client Name', 'Items JSON', 'Status', 'Created At']]).setFontWeight('bold');
-  } else if (name === SHEETS.INVOICES) {
-    sheet.getRange(1, 1, 1, 7).setValues([['Invoice ID', 'Date', 'Client ID', 'Client Name', 'Items JSON', 'Status', 'Created At']]).setFontWeight('bold');
+    sheet.getRange(1, 1, 1, 8).setValues([['Order ID', 'Date', 'Client ID', 'Client Name', 'Items JSON', 'Status', 'Created At', 'Invoice Numbers']]).setFontWeight('bold');
   }
 }
 
@@ -616,10 +634,37 @@ function normalizeDate(d) {
 }
 
 function ensurePackingSlipsHeader(sheet) {
+  var headerLen = sheet.getLastColumn();
+  var headerRow = headerLen > 0 ? sheet.getRange(1, 1, 1, headerLen).getValues()[0] : [];
+  var desired = ['Slip Code', 'Date', 'Client ID', 'Client Name', 'Client Company', 'Client Phone', 'Client Address', 'Items JSON', 'Total Quantity', 'Notes', 'Invoice Numbers', 'Created At', 'Created By', 'Edited By', 'Linked Orders', 'Invoice Numbers (Legacy)'];
+  var col11 = headerRow.length >= 11 ? String(headerRow[10] || '').trim() : '';
+  var col16 = headerRow.length >= 16 ? String(headerRow[15] || '').trim() : '';
+  // Migrate legacy header names independently so we don't accidentally rely
+  // on column 11 to deduce column 16's state.
+  if (col11 === 'Invoice Number') {
+    sheet.getRange(1, 11).setValue('Invoice Numbers');
+  }
+  if (col16 === 'Linked Invoices') {
+    sheet.getRange(1, 16).setValue('Invoice Numbers (Legacy)');
+  }
+  // Ensure header is at least 16 columns wide with the right headers.
+  if (headerRow.length < 16) {
+    sheet.getRange(1, 1, 1, desired.length).setValues([desired]).setFontWeight('bold');
+  } else if (headerRow[14] !== 'Linked Orders' || headerRow[15] !== 'Invoice Numbers (Legacy)') {
+    sheet.getRange(1, 1, 1, desired.length).setValues([desired]).setFontWeight('bold');
+  }
+}
+
+/** Repairs any rows where the legacy "Invoice Number" column has raw data and the
+ *  new "Invoice Numbers" column is empty – essentially a no-op safety net since
+ *  the header migration keeps the existing data in place and the read path merges
+ *  both columns at load time.
+ */
+function ensureOrdersHeader(sheet) {
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  if (header.length < 16 || header[14] !== 'Linked Orders' || header[15] !== 'Linked Invoices') {
-    var newHeader = ['Slip Code', 'Date', 'Client ID', 'Client Name', 'Client Company', 'Client Phone', 'Client Address', 'Items JSON', 'Total Quantity', 'Notes', 'Invoice Number', 'Created At', 'Created By', 'Edited By', 'Linked Orders', 'Linked Invoices'];
-    sheet.getRange(1, 1, 1, newHeader.length).setValues([newHeader]).setFontWeight('bold');
+  var desired = ['Order ID', 'Date', 'Client ID', 'Client Name', 'Items JSON', 'Status', 'Created At', 'Invoice Numbers'];
+  if (header.length < 8 || header[7] !== 'Invoice Numbers') {
+    sheet.getRange(1, 1, 1, desired.length).setValues([desired]).setFontWeight('bold');
   }
 }
 
@@ -637,6 +682,11 @@ function getPackingSlips() {
       } catch (e) {
         items = [];
       }
+      // Merge free-floating invoice numbers from the primary column and
+      // the legacy "Invoice Numbers (Legacy)" column (was "Linked Invoices").
+      var invoiceNumbers = normalizeInvoiceNumberList(values[i][10]).concat(
+        normalizeInvoiceNumberList(values[i][15])
+      );
       slips.push({
         slipCode: values[i][0],
         date: normalizeDate(values[i][1]),
@@ -648,7 +698,8 @@ function getPackingSlips() {
         items: items,
         totalQuantity: values[i][8],
         notes: values[i][9],
-        invoiceNumber: values[i][10] || '',
+        invoiceNumber: joinInvoiceNumberList(invoiceNumbers),
+        invoiceNumbers: invoiceNumbers,
         createdAt: values[i][11],
         createdBy: values[i][12] || '',
         editedBy: values[i][13] || '',
@@ -714,9 +765,22 @@ function savePackingSlip(slip) {
   slip.editedBy = currentUser;
 
   ensurePackingSlipsHeader(sheet);
-  
+
   var orderStr = Array.isArray(slip.linkedOrders) ? slip.linkedOrders.join(', ') : (slip.linkedOrders || '');
-  var invoiceStr = Array.isArray(slip.linkedInvoices) ? slip.linkedInvoices.join(', ') : (slip.linkedInvoices || '');
+  // Accept either free-floating invoice numbers (array) or a legacy single string.
+  var invoiceNumbers = [];
+  if (Array.isArray(slip.invoiceNumbers)) {
+    invoiceNumbers = slip.invoiceNumbers.map(function(s) { return String(s).trim(); }).filter(Boolean);
+  } else if (Array.isArray(slip.linkedInvoices) && slip.linkedInvoices.length) {
+    invoiceNumbers = slip.linkedInvoices.map(function(s) { return String(s).trim(); }).filter(Boolean);
+  }
+  if (slip.invoiceNumber && typeof slip.invoiceNumber === 'string') {
+    slip.invoiceNumber.split(',').forEach(function(part) {
+      var s = String(part || '').trim();
+      if (s && invoiceNumbers.indexOf(s) === -1) invoiceNumbers.push(s);
+    });
+  }
+  var invoiceNumbersPrimary = joinInvoiceNumberList(invoiceNumbers);
 
   sheet.appendRow([
     slip.slipCode,
@@ -729,19 +793,24 @@ function savePackingSlip(slip) {
     JSON.stringify(slip.items),
     slip.totalQuantity,
     slip.notes || '',
-    slip.invoiceNumber || '',
+    invoiceNumbersPrimary,
     slip.createdAt,
     slip.createdBy,
     slip.editedBy,
     orderStr,
-    invoiceStr
+    invoiceNumbersPrimary // mirror into legacy column for backward compatibility
   ]);
 
-  // Recalculate status for linked orders and invoices
+  // Reflect the value we persisted onto the returned object so the client stays in sync.
+  slip.invoiceNumber = invoiceNumbersPrimary;
+  slip.invoiceNumbers = invoiceNumbers;
+  slip.linkedInvoices = invoiceNumbersPrimary;
+
+  // Recalculate statuses for any linked orders (invoices live inside orders now).
   try {
-    recalculateLinkedStatuses(slip.linkedOrders, slip.linkedInvoices);
+    recalculateLinkedStatuses(slip.linkedOrders);
   } catch (e) {
-    Logger.log("Recalculate statuses failed: " + e.message);
+    Logger.log("Recalculate order statuses failed: " + e.message);
   }
 
   return slip;
@@ -751,7 +820,7 @@ function getSuggestions(clientId) {
   checkLicenseOrThrow();
   if (!clientId) return [];
   var suggestions = {};
-  
+
   // 1. Get from past packing slips
   var slips = getPackingSlips();
   for (var i = 0; i < slips.length; i++) {
@@ -762,8 +831,8 @@ function getSuggestions(clientId) {
       }
     }
   }
-  
-  // 2. Get from client's Orders
+
+  // 2. Get from client's Orders (and any associated invoice-number lists)
   try {
     var ordersList = getOrders();
     for (var i = 0; i < ordersList.length; i++) {
@@ -776,20 +845,47 @@ function getSuggestions(clientId) {
     }
   } catch(e) {}
 
-  // 3. Get from client's Invoices
-  try {
-    var invoicesList = getInvoices();
-    for (var i = 0; i < invoicesList.length; i++) {
-      if (invoicesList[i].clientId === clientId && invoicesList[i].items) {
-        for (var j = 0; j < invoicesList[i].items.length; j++) {
-          var name = String(invoicesList[i].items[j].name || '').trim();
-          if (name) suggestions[name] = true;
-        }
-      }
-    }
-  } catch(e) {}
-  
   return Object.keys(suggestions).sort();
+}
+
+/**
+ * Returns a deduplicated list of invoice numbers recorded against any order or
+ * any packing slip for a given client. Used by the slip-form picker so users
+ * can quickly pick a known invoice number without re-typing it.
+ */
+function getClientInvoiceNumbers(clientId) {
+  checkLicenseOrThrow();
+  var out = [];
+  var seen = {};
+  if (!clientId) return out;
+
+  var pushOne = function(val) {
+    var s = String(val || '').trim();
+    if (s && !seen[s]) {
+      seen[s] = true;
+      out.push(s);
+    }
+  };
+
+  try {
+    var ordersList = getOrders();
+    ordersList.forEach(function(o) {
+      if (o.clientId === clientId) {
+        (o.invoiceNumbers || []).forEach(pushOne);
+      }
+    });
+  } catch (e) {}
+
+  try {
+    var slipsList = getPackingSlips();
+    slipsList.forEach(function(s) {
+      if (s.clientId === clientId) {
+        (s.invoiceNumbers || []).forEach(pushOne);
+      }
+    });
+  } catch (e) {}
+
+  return out.sort();
 }
 
 function duplicateSlip(slipCode) {
@@ -819,6 +915,7 @@ function getOrders() {
       Logger.log("Orders sheet could not be opened or created.");
       return [];
     }
+    ensureOrdersHeader(sheet);
     var values = sheet.getDataRange().getValues();
     var orders = [];
     for (var i = 1; i < values.length; i++) {
@@ -836,7 +933,8 @@ function getOrders() {
           clientName: values[i][3],
           items: items,
           status: values[i][5] || 'Pending',
-          createdAt: values[i][6]
+          createdAt: values[i][6],
+          invoiceNumbers: normalizeInvoiceNumberList(values[i][7])
         });
       }
     }
@@ -870,26 +968,50 @@ function saveOrder(order) {
   checkLicenseOrThrow();
   if (!order) throw new Error('Order data is empty.');
   if (!order.clientId || !order.clientName) throw new Error('Client selection is required.');
-  
+
   var sheet = getSheet(SHEETS.ORDERS);
   if (!sheet) throw new Error('Could not access or create the "Orders" sheet tab. Please make sure you have edit access to this spreadsheet.');
-  
+
+  ensureOrdersHeader(sheet);
   var values = sheet.getDataRange().getValues();
   order.createdAt = order.createdAt || new Date().toISOString();
   order.status = calculateStatusFromItems(order.items, 'Pending');
-  
+
+  // Normalize invoiceNumbers: accept array or comma-separated string for client compatibility.
+  var normalizedInvoices = [];
+  if (Array.isArray(order.invoiceNumbers)) {
+    normalizedInvoices = order.invoiceNumbers.map(function(s) { return String(s).trim(); }).filter(Boolean);
+  } else if (typeof order.invoiceNumbers === 'string') {
+    normalizedInvoices = normalizeInvoiceNumberList(order.invoiceNumbers);
+  }
+  if (typeof order.invoiceNumbersRaw === 'string') {
+    normalizeInvoiceNumberList(order.invoiceNumbersRaw).forEach(function(s) {
+      if (normalizedInvoices.indexOf(s) === -1) normalizedInvoices.push(s);
+    });
+  }
+  for (var n = 0; n < normalizedInvoices.length; n++) {
+    if (!normalizedInvoices[n]) {
+      normalizedInvoices.splice(n, 1);
+      n--;
+    }
+  }
+  order.invoiceNumbers = normalizedInvoices;
+  var invoiceNumbersStr = joinInvoiceNumberList(normalizedInvoices);
+
   if (order.id) {
     // Update existing order
     var found = false;
     for (var i = 1; i < values.length; i++) {
       if (values[i][0] === order.id) {
-        sheet.getRange(i + 1, 2, 1, 5).setValues([[
+        sheet.getRange(i + 1, 2, 1, 6).setValues([[
           order.date || '',
           order.clientId,
           order.clientName,
           JSON.stringify(order.items || []),
-          order.status
+          order.status,
+          order.createdAt
         ]]);
+        sheet.getRange(i + 1, 8).setValue(invoiceNumbersStr);
         found = true;
         break;
       }
@@ -908,7 +1030,7 @@ function saveOrder(order) {
     } else {
       order.id = getNextId(COUNTERS.ORDER, 'OR-');
     }
-    
+
     sheet.appendRow([
       order.id,
       order.date || '',
@@ -916,7 +1038,8 @@ function saveOrder(order) {
       order.clientName,
       JSON.stringify(order.items || []),
       order.status,
-      order.createdAt
+      order.createdAt,
+      invoiceNumbersStr
     ]);
   }
   return order;
@@ -937,135 +1060,26 @@ function deleteOrder(orderId) {
 }
 
 /* ------------------------------------------------------------------
- * Invoices Database Operations
+ * Invoices are a property of Orders and Packing Slips now, not a
+ * standalone entity. The Invoices sheet is therefore no longer
+ * initialised and dedicated invoice functions have been removed.
  * ------------------------------------------------------------------ */
-
-function getInvoices() {
-  try {
-    checkLicenseOrThrow();
-    var sheet = getSheet(SHEETS.INVOICES);
-    if (!sheet) {
-      Logger.log("Invoices sheet could not be opened or created.");
-      return [];
-    }
-    var values = sheet.getDataRange().getValues();
-    var invoices = [];
-    for (var i = 1; i < values.length; i++) {
-      if (values[i][0]) {
-        var items = [];
-        try {
-          items = JSON.parse(values[i][4] || '[]');
-        } catch (e) {
-          items = [];
-        }
-        invoices.push({
-          id: values[i][0],
-          date: normalizeDate(values[i][1]),
-          clientId: values[i][2],
-          clientName: values[i][3],
-          items: items,
-          status: values[i][5] || 'Unpaid',
-          createdAt: values[i][6]
-        });
-      }
-    }
-    return invoices;
-  } catch (err) {
-    Logger.log("getInvoices error: " + err.message);
-    return [];
-  }
-}
-
-function saveInvoice(invoice) {
-  checkLicenseOrThrow();
-  if (!invoice) throw new Error('Invoice data is empty.');
-  if (!invoice.clientId || !invoice.clientName) throw new Error('Client selection is required.');
-  
-  var sheet = getSheet(SHEETS.INVOICES);
-  if (!sheet) throw new Error('Could not access or create the "Invoices" sheet tab. Please make sure you have edit access to this spreadsheet.');
-  
-  var values = sheet.getDataRange().getValues();
-  invoice.createdAt = invoice.createdAt || new Date().toISOString();
-  invoice.status = calculateStatusFromItems(invoice.items, 'Unpaid');
-  
-  if (invoice.id) {
-    // Update existing invoice
-    var found = false;
-    for (var i = 1; i < values.length; i++) {
-      if (values[i][0] === invoice.id) {
-        sheet.getRange(i + 1, 2, 1, 5).setValues([[
-          invoice.date || '',
-          invoice.clientId,
-          invoice.clientName,
-          JSON.stringify(invoice.items || []),
-          invoice.status
-        ]]);
-        found = true;
-        break;
-      }
-    }
-    if (!found) throw new Error('Invoice ID ' + invoice.id + ' not found for update.');
-  } else {
-    // Create new invoice
-    if (invoice.customId) {
-      // Check for uniqueness
-      for (var i = 1; i < values.length; i++) {
-        if (String(values[i][0]).toLowerCase().trim() === String(invoice.customId).toLowerCase().trim()) {
-          throw new Error('Invoice Number ' + invoice.customId + ' already exists. Please choose a unique number.');
-        }
-      }
-      invoice.id = invoice.customId;
-    } else {
-      invoice.id = getNextId(COUNTERS.INVOICE, 'INV-');
-    }
-    
-    sheet.appendRow([
-      invoice.id,
-      invoice.date || '',
-      invoice.clientId,
-      invoice.clientName,
-      JSON.stringify(invoice.items || []),
-      invoice.status,
-      invoice.createdAt
-    ]);
-  }
-  return invoice;
-}
-
-function deleteInvoice(invoiceId) {
-  checkLicenseOrThrow();
-  if (!invoiceId) return false;
-  var sheet = getSheet(SHEETS.INVOICES);
-  var values = sheet.getDataRange().getValues();
-  for (var i = 1; i < values.length; i++) {
-    if (values[i][0] === invoiceId) {
-      sheet.deleteRow(i + 1);
-      return true;
-    }
-  }
-  return false;
-}
 
 /* ------------------------------------------------------------------
  * Balance & Linkage Statistics
  * ------------------------------------------------------------------ */
 
-function getLinkedDeliveryStats(clientId, orderIds, invoiceIds) {
+function getLinkedDeliveryStats(clientId, orderIds) {
   checkLicenseOrThrow();
-  
+
   // Clean IDs
   var targetOrders = [];
   if (orderIds) {
     if (Array.isArray(orderIds)) targetOrders = orderIds;
     else targetOrders = orderIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
   }
-  var targetInvoices = [];
-  if (invoiceIds) {
-    if (Array.isArray(invoiceIds)) targetInvoices = invoiceIds;
-    else targetInvoices = invoiceIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-  }
 
-  var stats = {}; // { productName: { ordered: 0, invoiced: 0, delivered: 0 } }
+  var stats = {}; // { productName: { ordered: 0, delivered: 0 } }
 
   // 1. Gather Ordered quantities
   if (targetOrders.length > 0) {
@@ -1075,7 +1089,7 @@ function getLinkedDeliveryStats(clientId, orderIds, invoiceIds) {
         (order.items || []).forEach(function(item) {
           var name = String(item.name || '').trim();
           if (name) {
-            if (!stats[name]) stats[name] = { ordered: 0, invoiced: 0, delivered: 0 };
+            if (!stats[name]) stats[name] = { ordered: 0, delivered: 0 };
             stats[name].ordered += Number(item.quantity || 0);
           }
         });
@@ -1083,23 +1097,7 @@ function getLinkedDeliveryStats(clientId, orderIds, invoiceIds) {
     });
   }
 
-  // 2. Gather Invoiced quantities
-  if (targetInvoices.length > 0) {
-    var dbInvoices = getInvoices();
-    dbInvoices.forEach(function(invoice) {
-      if (targetInvoices.indexOf(invoice.id) !== -1) {
-        (invoice.items || []).forEach(function(item) {
-          var name = String(item.name || '').trim();
-          if (name) {
-            if (!stats[name]) stats[name] = { ordered: 0, invoiced: 0, delivered: 0 };
-            stats[name].invoiced += Number(item.quantity || 0);
-          }
-        });
-      }
-    });
-  }
-
-  // 3. Sum up Delivered quantities from all active packing slips
+  // 2. Sum up Delivered quantities from all active packing slips
   var dbSlips = getPackingSlips();
   dbSlips.forEach(function(slip) {
     // Only parse active slips (skip revision archives)
@@ -1107,12 +1105,11 @@ function getLinkedDeliveryStats(clientId, orderIds, invoiceIds) {
       (slip.items || []).forEach(function(item) {
         var name = String(item.name || '').trim();
         if (name) {
-          // If this item was linked to one of our target orders or invoices
+          // If this item was linked to one of our target orders
           var matchesOrder = item.orderId && targetOrders.indexOf(item.orderId) !== -1;
-          var matchesInvoice = item.invoiceId && targetInvoices.indexOf(item.invoiceId) !== -1;
-          
-          if (matchesOrder || matchesInvoice) {
-            if (!stats[name]) stats[name] = { ordered: 0, invoiced: 0, delivered: 0 };
+
+          if (matchesOrder) {
+            if (!stats[name]) stats[name] = { ordered: 0, delivered: 0 };
             stats[name].delivered += Number(item.quantity || 0);
           }
         }
@@ -1123,153 +1120,82 @@ function getLinkedDeliveryStats(clientId, orderIds, invoiceIds) {
   return stats;
 }
 
-function recalculateLinkedStatuses(orderIds, invoiceIds) {
+/**
+ * Recalculates order statuses (Pending / Partially Delivered / Completed)
+ * after a packing slip has been saved. Called from savePackingSlip so that
+ * order statuses stay in sync with delivered quantities on linked slips.
+ */
+function recalculateLinkedStatuses(orderIds) {
   var targetOrders = [];
   if (orderIds) {
     if (Array.isArray(orderIds)) targetOrders = orderIds;
     else targetOrders = orderIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
   }
-  var targetInvoices = [];
-  if (invoiceIds) {
-    if (Array.isArray(invoiceIds)) targetInvoices = invoiceIds;
-    else targetInvoices = invoiceIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-  }
+  if (!targetOrders.length) return;
 
   var dbSlips = getPackingSlips().filter(function(s) { return s.slipCode.indexOf('-rev') === -1; });
 
-  // Recalculate Orders Status
-  if (targetOrders.length > 0) {
-    var orderSheet = getSheet(SHEETS.ORDERS);
-    var orderValues = orderSheet.getDataRange().getValues();
-    
-    targetOrders.forEach(function(orderId) {
-      var foundIndex = -1;
-      var orderObj = null;
-      for (var i = 1; i < orderValues.length; i++) {
-        if (orderValues[i][0] === orderId) {
-          foundIndex = i + 1;
-          try {
-            orderObj = {
-              items: JSON.parse(orderValues[i][4] || '[]'),
-              status: orderValues[i][5]
-            };
-          } catch(e) {}
-          break;
-        }
+  var orderSheet = getSheet(SHEETS.ORDERS);
+  if (!orderSheet) return;
+  var orderValues = orderSheet.getDataRange().getValues();
+
+  targetOrders.forEach(function(orderId) {
+    var foundIndex = -1;
+    var orderObj = null;
+    for (var i = 1; i < orderValues.length; i++) {
+      if (orderValues[i][0] === orderId) {
+        foundIndex = i + 1;
+        try {
+          orderObj = {
+            items: JSON.parse(orderValues[i][4] || '[]'),
+            status: orderValues[i][5]
+          };
+        } catch (e) {}
+        break;
       }
+    }
 
-      var orderItems = orderObj && Array.isArray(orderObj.items) ? orderObj.items : [];
-      if (foundIndex !== -1 && orderObj && orderItems.length > 0) {
-        var allDelivered = true;
-        var anyDelivered = false;
+    var orderItems = orderObj && Array.isArray(orderObj.items) ? orderObj.items : [];
+    if (foundIndex === -1 || !orderObj || !orderItems.length) return;
 
-        orderItems.forEach(function(orderItem) {
-          var itemName = String(orderItem.name || '').trim();
-          var orderedQty = Number(orderItem.quantity || 0);
-          var deliveredQty = 0;
+    var allDelivered = true;
+    var anyDelivered = false;
 
-          dbSlips.forEach(function(slip) {
-            (slip.items || []).forEach(function(slipItem) {
-              if (String(slipItem.name || '').trim() === itemName && slipItem.orderId === orderId) {
-                deliveredQty += Number(slipItem.quantity || 0);
-              }
-            });
-          });
+    orderItems.forEach(function(orderItem) {
+      var itemName = String(orderItem.name || '').trim();
+      var orderedQty = Number(orderItem.quantity || 0);
+      var deliveredQty = 0;
 
-          orderItem.shipped = deliveredQty;
-
-          if (deliveredQty < orderedQty) {
-            allDelivered = false;
-          }
-          if (deliveredQty > 0) {
-            anyDelivered = true;
+      dbSlips.forEach(function(slip) {
+        (slip.items || []).forEach(function(slipItem) {
+          if (String(slipItem.name || '').trim() === itemName && slipItem.orderId === orderId) {
+            deliveredQty += Number(slipItem.quantity || 0);
           }
         });
+      });
 
-        var newStatus = 'Pending';
-        if (allDelivered) {
-          newStatus = 'Completed';
-        } else if (anyDelivered) {
-          newStatus = 'Partially Delivered';
-        }
+      orderItem.shipped = deliveredQty;
 
-        // Save updated items JSON and status
-        orderSheet.getRange(foundIndex, 5, 1, 2).setValues([[
-          JSON.stringify(orderItems),
-          newStatus
-        ]]);
+      if (deliveredQty < orderedQty) {
+        allDelivered = false;
+      }
+      if (deliveredQty > 0) {
+        anyDelivered = true;
       }
     });
-  }
 
-  // Recalculate Invoices Status
-  if (targetInvoices.length > 0) {
-    var invoiceSheet = getSheet(SHEETS.INVOICES);
-    var invoiceValues = invoiceSheet.getDataRange().getValues();
+    var newStatus = 'Pending';
+    if (allDelivered) {
+      newStatus = 'Completed';
+    } else if (anyDelivered) {
+      newStatus = 'Partially Delivered';
+    }
 
-    targetInvoices.forEach(function(invoiceId) {
-      var foundIndex = -1;
-      var invoiceObj = null;
-      for (var i = 1; i < invoiceValues.length; i++) {
-        if (invoiceValues[i][0] === invoiceId) {
-          foundIndex = i + 1;
-          try {
-            invoiceObj = {
-              items: JSON.parse(invoiceValues[i][4] || '[]'),
-              status: invoiceValues[i][5]
-            };
-          } catch(e) {}
-          break;
-        }
-      }
-
-      var invoiceItems = invoiceObj && Array.isArray(invoiceObj.items) ? invoiceObj.items : [];
-      if (foundIndex !== -1 && invoiceObj && invoiceItems.length > 0) {
-        var allDelivered = true;
-        var anyDelivered = false;
-
-        invoiceItems.forEach(function(invoiceItem) {
-          var itemName = String(invoiceItem.name || '').trim();
-          var invoicedQty = Number(invoiceItem.quantity || 0);
-          var deliveredQty = 0;
-
-          dbSlips.forEach(function(slip) {
-            (slip.items || []).forEach(function(slipItem) {
-              if (String(slipItem.name || '').trim() === itemName && slipItem.invoiceId === invoiceId) {
-                deliveredQty += Number(slipItem.quantity || 0);
-              }
-            });
-          });
-
-          invoiceItem.shipped = deliveredQty;
-
-          if (deliveredQty < invoicedQty) {
-            allDelivered = false;
-          }
-          if (deliveredQty > 0) {
-            anyDelivered = true;
-          }
-        });
-
-        var newStatus = invoiceObj.status; // Default to old status (Unpaid/Paid)
-        if (allDelivered) {
-          newStatus = 'Completed';
-        } else if (anyDelivered) {
-          newStatus = 'Partially Delivered';
-        } else {
-          if (newStatus === 'Completed' || newStatus === 'Partially Delivered') {
-            newStatus = 'Unpaid';
-          }
-        }
-
-        // Save updated items JSON and status
-        invoiceSheet.getRange(foundIndex, 5, 1, 2).setValues([[
-          JSON.stringify(invoiceItems),
-          newStatus
-        ]]);
-      }
-    });
-  }
+    orderSheet.getRange(foundIndex, 5, 1, 2).setValues([[
+      JSON.stringify(orderItems),
+      newStatus
+    ]]);
+  });
 }
 
 function runCentral(functionName, args) {

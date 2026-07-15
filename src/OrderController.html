@@ -62,12 +62,12 @@ function renderOrders() {
   const tbody = $('#orders-table tbody');
   if (!tbody) return;
   tbody.innerHTML = '';
-  
+
   if (!orders.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">No orders found. Add an order details above to start.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">No orders found. Add an order details above to start.</td></tr>';
     return;
   }
-  
+
   orders.slice().reverse().forEach(o => {
     let statusClass = 'badge-secondary';
     if (o.status === 'Pending') statusClass = 'badge-info';
@@ -77,6 +77,10 @@ function renderOrders() {
     const items = Array.isArray(o.items) ? o.items : [];
     const itemsCount = items.length;
     const totalQty = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const invoiceNums = Array.isArray(o.invoiceNumbers) ? o.invoiceNumbers : [];
+    const invoiceDisplay = invoiceNums.length
+      ? invoiceNums.map(n => `<span class="badge badge-secondary" style="margin-right:4px;">${escapeHtml(n)}</span>`).join('')
+      : '<span class="text-muted" style="font-style:italic; font-size:0.8rem;">None</span>';
 
     const tr = document.createElement('tr');
     tr.className = 'table-row-animate';
@@ -85,6 +89,7 @@ function renderOrders() {
       <td><strong>${formatDate(o.date)}</strong></td>
       <td>${escapeHtml(o.clientName || '')}</td>
       <td>${itemsCount} items (${totalQty} units)</td>
+      <td>${invoiceDisplay}</td>
       <td><span class="badge ${statusClass}">${escapeHtml(o.status || 'Pending')}</span></td>
       <td>
         <div style="display:flex; gap: 4px;">
@@ -99,7 +104,7 @@ function renderOrders() {
     `;
     tbody.appendChild(tr);
   });
-  
+
   if (window.lucide) lucide.createIcons();
 }
 
@@ -137,18 +142,23 @@ function addOrderItemRow(name, qty, shipped) {
 function editOrder(orderId) {
   const o = orders.find(x => x.id === orderId);
   if (!o) return;
-  
+
   editingOrderId = o.id;
-  
+
   $('#order-client').value = o.clientId || '';
   $('#order-date').value = o.date || '';
-  
+
   const customIdInput = $('#order-custom-id');
   if (customIdInput) {
     customIdInput.value = o.id || '';
     customIdInput.disabled = true;
   }
-  
+
+  const invInput = $('#order-invoice-numbers');
+  if (invInput) {
+    invInput.value = Array.isArray(o.invoiceNumbers) ? o.invoiceNumbers.join(', ') : (o.invoiceNumbers || '');
+  }
+
   // Populate items
   const container = $('#order-items-container');
   if (container) {
@@ -166,13 +176,13 @@ function editOrder(orderId) {
   // UI state updates
   const cancelBtn = $('#btn-cancel-order-edit');
   if (cancelBtn) cancelBtn.style.display = 'inline-flex';
-  
+
   const formCard = $('#orders .card:first-child');
   if (formCard) {
     formCard.querySelector('h2').innerHTML = `<i data-lucide="edit" style="color:var(--accent);"></i> Edit Order Details: ${o.id}`;
     $('#btn-save-order').innerHTML = '<i data-lucide="check-circle"></i> Update Order Details';
   }
-  
+
   $('#order-form').scrollIntoView({ behavior: 'smooth' });
   if (window.lucide) lucide.createIcons();
 }
@@ -180,29 +190,32 @@ function editOrder(orderId) {
 function cancelOrderEdit() {
   editingOrderId = null;
   $('#order-form').reset();
-  
+
   const customIdInput = $('#order-custom-id');
   if (customIdInput) {
     customIdInput.value = '';
     customIdInput.disabled = false;
   }
-  
+
+  const invInput = $('#order-invoice-numbers');
+  if (invInput) invInput.value = '';
+
   $('#order-items-container').innerHTML = '';
   addOrderItemRow('', 1, 0);
   if ($('#order-date')) $('#order-date').valueAsDate = new Date();
-  
+
   const box = $('#order-suggestions-box');
   if (box) box.style.display = 'none';
-  
+
   const cancelBtn = $('#btn-cancel-order-edit');
   if (cancelBtn) cancelBtn.style.display = 'none';
-  
+
   const formCard = $('#orders .card:first-child');
   if (formCard) {
     formCard.querySelector('h2').innerHTML = '<i data-lucide="shopping-cart" style="color:var(--accent);"></i> Register New Order';
     $('#btn-save-order').innerHTML = '<i data-lucide="plus-circle"></i> Save Order Details';
   }
-  
+
   if (window.lucide) lucide.createIcons();
 }
 
@@ -210,17 +223,28 @@ function saveOrderSubmit() {
   const clientId = $('#order-client').value;
   const orderDate = $('#order-date').value || new Date().toISOString().substring(0, 10);
   const customId = $('#order-custom-id').value.trim();
-  
+
   if (!clientId) {
     toast('Client selection is required.', 'danger');
     return;
   }
-  
+
   const clientObj = clients.find(c => String(c.id).trim() === String(clientId).trim());
   if (!clientObj) {
     toast('Selected client not found in database.', 'danger');
     return;
   }
+
+  // Gather invoice numbers (comma-separated input)
+  const invInput = $('#order-invoice-numbers');
+  const invRaw = invInput ? invInput.value : '';
+  const invoiceNumbers = String(invRaw || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const seenInv = {};
+  const dedupedInv = [];
+  invoiceNumbers.forEach(v => { if (v && !seenInv[v]) { seenInv[v] = true; dedupedInv.push(v); } });
 
   // Gather items
   const rows = document.querySelectorAll('#order-items-container .item-row-four-cols');
@@ -232,7 +256,7 @@ function saveOrderSubmit() {
     const qty = parseInt(row.querySelector('.item-qty').value, 10);
     const shippedVal = row.querySelector('.item-shipped').value;
     const shipped = shippedVal !== '' ? parseInt(shippedVal, 10) : 0;
-    
+
     if (!name) {
       toast(`Row ${idx + 1}: Description is required.`, 'danger');
       valid = false;
@@ -261,7 +285,9 @@ function saveOrderSubmit() {
     clientId: clientId,
     clientName: clientObj.name,
     items: items,
-    status: currentOrder.status || 'Pending'
+    status: currentOrder.status || 'Pending',
+    invoiceNumbers: dedupedInv,
+    invoiceNumbersRaw: invRaw
   };
 
   const btn = $('#btn-save-order');

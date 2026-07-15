@@ -54,7 +54,6 @@ const $$ = sel => document.querySelectorAll(sel);
 let settings = {};
 let clients = [];
 let orders = [];
-let invoices = [];
 let slips = [];
 let suggestions = [];
 let currentSlip = null;
@@ -96,8 +95,6 @@ function showPage(pageId) {
     loadClients();
   } else if (pageId === 'orders') {
     loadOrders();
-  } else if (pageId === 'invoices') {
-    loadInvoices();
   } else if (pageId === 'slips') {
     loadSlips();
   }

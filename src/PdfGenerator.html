@@ -81,9 +81,35 @@ function generatePDF(slip, settings) {
   doc.setTextColor(71, 85, 105); // slate-600
   doc.text('Slip Code: ' + slip.slipCode, pageW - margin, y + 38, { align: 'right' });
   doc.text('Date: ' + formatDate(slip.date), pageW - margin, y + 52, { align: 'right' });
-  if (slip.invoiceNumber) {
-    doc.text('Invoice #: ' + slip.invoiceNumber, pageW - margin, y + 66, { align: 'right' });
+
+  // Build the lines below: Order # (when linked) and Invoice # (free-floating).
+  // Move further down per added line so labels never collide with the title.
+  var linkedOrderIds = (slip.linkedOrders || '').toString().split(',').map(function (s) { return String(s || '').trim(); }).filter(Boolean);
+  var invoiceNums = Array.isArray(slip.invoiceNumbers) && slip.invoiceNumbers.length
+    ? slip.invoiceNumbers
+    : String(slip.invoiceNumber || '').split(',').map(function (s) { return String(s || '').trim(); }).filter(Boolean);
+
+  var baseY = y + 66;
+  if (linkedOrderIds.length) {
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(30, 58, 95);
+    doc.text('Order #:', pageW - margin - 70, baseY, { align: 'right' });
+    doc.setFont('Helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text(linkedOrderIds.join(', '), pageW - margin, baseY, { align: 'right' });
+    baseY += 14;
   }
+  if (invoiceNums.length) {
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(30, 58, 95);
+    doc.text('Invoice #:', pageW - margin - 70, baseY, { align: 'right' });
+    doc.setFont('Helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text(invoiceNums.join(', '), pageW - margin, baseY, { align: 'right' });
+    baseY += 14;
+  }
+  var yShift = (baseY - (y + 66));
+  y += (yShift > 0 ? yShift : 0);
 
   y += 90;
 
