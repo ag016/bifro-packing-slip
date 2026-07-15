@@ -17,6 +17,63 @@ const COUNTERS = {
 };
 
 /* ------------------------------------------------------------------
+ * Licensing & Access Control
+ * ------------------------------------------------------------------ */
+
+function checkLicense() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetId = ss.getId();
+  var props = PropertiesService.getScriptProperties();
+  var licensedSheetsStr = props.getProperty('LICENSED_SHEETS');
+  
+  // Log license check attempts in script logs
+  try {
+    var owner = ss.getOwner() ? ss.getOwner().getEmail() : 'Unknown Owner';
+    var sheetName = ss.getName();
+    Logger.log("License check for Sheet ID: " + sheetId + " | Name: " + sheetName + " | Owner: " + owner);
+  } catch (e) {
+    Logger.log("License logging error: " + e.message);
+  }
+  
+  // If no licensed sheets list is set up in properties, default to active (prevents lockouts during setup)
+  if (licensedSheetsStr === null) {
+    return true;
+  }
+  
+  var licensedSheets = licensedSheetsStr.split(',').map(function(s) { return s.trim(); });
+  return licensedSheets.indexOf(sheetId) !== -1;
+}
+
+function checkLicenseOrThrow() {
+  if (!checkLicense()) {
+    throw new Error("License Inactive: Your Bifro Packing Slip license is inactive. Please contact support to reactivate or downgrade to the offline version.");
+  }
+}
+
+function getLicenseExpiredHtml() {
+  return HtmlService.createHtmlOutput(
+    "<!DOCTYPE html><html><head><title>License Expired</title>" +
+    "<meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
+    "<style>" +
+    "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0f172a; color: #f8fafc; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 24px; box-sizing: border-box; text-align: center; }" +
+    ".card { background-color: #1e293b; padding: 40px; border-radius: 16px; border: 1px solid #334155; max-width: 500px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3); }" +
+    "h1 { color: #f59e0b; font-size: 1.8rem; margin: 0 0 16px 0; font-weight: 700; letter-spacing: -0.025em; }" +
+    "p { color: #94a3b8; font-size: 1rem; line-height: 1.6; margin: 0 0 24px 0; }" +
+    ".contact-btn { display: inline-block; background-color: #f59e0b; color: #0f172a; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 0.95rem; transition: background-color 0.2s; }" +
+    ".contact-btn:hover { background-color: #d97706; }" +
+    "span.meta { display: block; font-family: monospace; font-size: 0.75rem; color: #64748b; margin-top: 32px; word-break: break-all; }" +
+    "</style></head><body>" +
+    "<div class='card'>" +
+    "<h1>Bifro Packing Slip App</h1>" +
+    "<h2>License Expired</h2>" +
+    "<p>Your automatic updates subscription is inactive. To continue using the software, please contact us to reactivate your plan or request to have the self-contained, offline version installed on your sheet.</p>" +
+    "<a href='mailto:support@bifro.com' class='contact-btn'>Contact Support</a>" +
+    "<span class='meta'>Sheet ID: " + SpreadsheetApp.getActiveSpreadsheet().getId() + "</span>" +
+    "</div></body></html>"
+  ).setTitle("Bifro - License Expired");
+}
+
+/* ------------------------------------------------------------------
  * Helpers
  * ------------------------------------------------------------------ */
 
@@ -197,6 +254,7 @@ function getUserAccess() {
 }
 
 function getUsers() {
+  checkLicenseOrThrow();
   var callerAccess = getUserAccess();
   if (!callerAccess.access || callerAccess.role !== 'Admin') {
     throw new Error('Unauthorized access: Only Admins can manage users.');
@@ -220,6 +278,7 @@ function getUsers() {
 }
 
 function saveUser(user) {
+  checkLicenseOrThrow();
   var callerAccess = getUserAccess();
   if (!callerAccess.access || callerAccess.role !== 'Admin') {
     throw new Error('Unauthorized access: Only Admins can manage users.');
@@ -290,6 +349,7 @@ function saveUser(user) {
 }
 
 function deleteUser(userId) {
+  checkLicenseOrThrow();
   var callerAccess = getUserAccess();
   if (!callerAccess.access || callerAccess.role !== 'Admin') {
     throw new Error('Unauthorized access: Only Admins can manage users.');
@@ -343,6 +403,10 @@ function deleteUser(userId) {
  * ------------------------------------------------------------------ */
 
 function doGet(e) {
+  if (!checkLicense()) {
+    return getLicenseExpiredHtml();
+  }
+
   // Serve the PWA manifest from a real URL so browsers recognize it.
   if (e && e.parameter && e.parameter.manifest === 'true') {
     return serveManifest();
@@ -394,14 +458,17 @@ function include(filename) {
  * ------------------------------------------------------------------ */
 
 function getAccess() {
+  checkLicenseOrThrow();
   return getUserAccess();
 }
 
 function getSettings() {
+  checkLicenseOrThrow();
   return getSettingsSheetValues();
 }
 
 function saveSettings(settings) {
+  checkLicenseOrThrow();
   if (!settings || !settings.CompanyName || !settings.CompanyName.trim()) {
     throw new Error('Company Name is required.');
   }
@@ -423,6 +490,7 @@ function saveSettings(settings) {
 }
 
 function getClients() {
+  checkLicenseOrThrow();
   var sheet = getSheet(SHEETS.CLIENTS);
   var values = sheet.getDataRange().getValues();
   var clients = [];
@@ -442,6 +510,7 @@ function getClients() {
 }
 
 function saveClient(client) {
+  checkLicenseOrThrow();
   if (!client || !client.name || !client.name.trim()) {
     throw new Error('Client Name is required.');
   }
@@ -498,6 +567,7 @@ function ensurePackingSlipsHeader(sheet) {
 }
 
 function getPackingSlips() {
+  checkLicenseOrThrow();
   var sheet = getSheet(SHEETS.PACKING_SLIPS);
   ensurePackingSlipsHeader(sheet);
   var values = sheet.getDataRange().getValues();
@@ -532,6 +602,7 @@ function getPackingSlips() {
 }
 
 function savePackingSlip(slip) {
+  checkLicenseOrThrow();
   if (!slip) {
     throw new Error('Packing slip data is empty.');
   }
@@ -604,6 +675,7 @@ function savePackingSlip(slip) {
 }
 
 function getSuggestions(clientId) {
+  checkLicenseOrThrow();
   if (!clientId) return [];
   var slips = getPackingSlips();
   var suggestions = {};
@@ -619,6 +691,7 @@ function getSuggestions(clientId) {
 }
 
 function duplicateSlip(slipCode) {
+  checkLicenseOrThrow();
   if (!slipCode) return null;
   var slips = getPackingSlips();
   for (var i = 0; i < slips.length; i++) {
