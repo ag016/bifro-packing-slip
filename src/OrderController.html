@@ -7,6 +7,9 @@
 let editingOrderId = null;
 
 function loadOrders(callback) {
+  if (clients.length) {
+    populateClientSelect();
+  }
   // Ensure clients are loaded first since orders reference clients
   if (!clients.length) {
     google.script.run

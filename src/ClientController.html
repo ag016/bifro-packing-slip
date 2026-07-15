@@ -152,18 +152,47 @@ function saveClient() {
 }
 
 function populateClientSelect() {
-  const sel = $('#slip-client');
-  if (!sel) return;
-  const current = sel.value;
-  sel.innerHTML = '<option value="new" class="bold-option">+ Add new client</option>';
-  
-  clients.forEach(c => {
-    const opt = document.createElement('option');
-    opt.value = c.id;
-    opt.textContent = `${c.name} ${c.company ? ' - ' + c.company : ''} [${c.id}]`;
-    sel.appendChild(opt);
-  });
-  sel.value = current;
+  // 1. Slip client select
+  const selSlip = $('#slip-client');
+  if (selSlip) {
+    const current = selSlip.value;
+    selSlip.innerHTML = '<option value="new" class="bold-option">+ Add new client</option>';
+    clients.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = `${c.name} ${c.company ? ' - ' + c.company : ''} [${c.id}]`;
+      selSlip.appendChild(opt);
+    });
+    selSlip.value = current;
+  }
+
+  // 2. Order client select
+  const selOrder = $('#order-client');
+  if (selOrder) {
+    const current = selOrder.value;
+    selOrder.innerHTML = '<option value="">-- Choose Client --</option>';
+    clients.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = `${c.name} ${c.company ? ' - ' + c.company : ''} [${c.id}]`;
+      selOrder.appendChild(opt);
+    });
+    selOrder.value = current;
+  }
+
+  // 3. Invoice client select
+  const selInvoice = $('#invoice-client');
+  if (selInvoice) {
+    const current = selInvoice.value;
+    selInvoice.innerHTML = '<option value="">-- Choose Client --</option>';
+    clients.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = `${c.name} ${c.company ? ' - ' + c.company : ''} [${c.id}]`;
+      selInvoice.appendChild(opt);
+    });
+    selInvoice.value = current;
+  }
 }
 
 function toggleNewClient() {

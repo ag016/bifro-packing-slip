@@ -7,6 +7,9 @@
 let editingInvoiceId = null;
 
 function loadInvoices(callback) {
+  if (clients.length) {
+    populateClientSelect();
+  }
   // Ensure clients are loaded first
   if (!clients.length) {
     google.script.run
