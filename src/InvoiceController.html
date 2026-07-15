@@ -75,8 +75,9 @@ function renderInvoices() {
     else if (inv.status === 'Partially Delivered') statusClass = 'badge-info';
     else if (inv.status === 'Completed') statusClass = 'badge-success';
 
-    const itemsCount = (inv.items || []).length;
-    const totalQty = (inv.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const items = Array.isArray(inv.items) ? inv.items : [];
+    const itemsCount = items.length;
+    const totalQty = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
 
     const tr = document.createElement('tr');
     tr.className = 'table-row-animate';

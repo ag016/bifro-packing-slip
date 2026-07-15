@@ -185,7 +185,7 @@ function generatePDF(slip, settings) {
   doc.setFontSize(10.5);
   doc.setTextColor(15, 23, 42); // slate-900
   
-  const totalQtyText = 'Total Quantity: ' + (slip.totalQuantity || slip.items.reduce((a, b) => a + (parseInt(b.quantity, 10) || 0), 0));
+  const totalQtyText = 'Total Quantity: ' + (slip.totalQuantity || (Array.isArray(slip.items) ? slip.items : []).reduce((a, b) => a + (parseInt(b.quantity, 10) || 0), 0));
   doc.text(totalQtyText, margin, finalY);
   finalY += 20;
 

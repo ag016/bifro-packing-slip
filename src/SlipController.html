@@ -800,7 +800,7 @@ function viewSlipByCode(slipCode) {
           <tfoot>
             <tr>
               <td class="text-right font-semibold">Total Quantity:</td>
-              <td class="text-center font-bold font-large">${s.totalQuantity || s.items.reduce((a, b) => a + (parseInt(b.quantity, 10) || 0), 0)}</td>
+              <td class="text-center font-bold font-large">${s.totalQuantity || (Array.isArray(s.items) ? s.items : []).reduce((a, b) => a + (parseInt(b.quantity, 10) || 0), 0)}</td>
             </tr>
           </tfoot>
         </table>
@@ -1246,7 +1246,7 @@ function linkOrder(orderId) {
     .withSuccessHandler(list => {
       orders = list || [];
       const order = orders.find(o => o.id === orderId);
-      if (order && order.items) {
+      if (order && Array.isArray(order.items)) {
         // If items-container has only 1 blank row, clear it
         const rows = $$('#items-container .item-row');
         if (rows.length === 1) {
@@ -1318,7 +1318,7 @@ function linkInvoice(invoiceId) {
     .withSuccessHandler(list => {
       invoices = list || [];
       const invoice = invoices.find(inv => inv.id === invoiceId);
-      if (invoice && invoice.items) {
+      if (invoice && Array.isArray(invoice.items)) {
         const rows = $$('#items-container .item-row');
         if (rows.length === 1) {
           const name = rows[0].querySelector('.item-name').value.trim();

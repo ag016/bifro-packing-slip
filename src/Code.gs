@@ -848,7 +848,7 @@ function getOrders() {
 }
 
 function calculateStatusFromItems(items, defaultStatus) {
-  if (!items || !items.length) return defaultStatus;
+  if (!items || !Array.isArray(items) || !items.length) return defaultStatus;
   var allDelivered = true;
   var anyDelivered = false;
   items.forEach(function(item) {
@@ -1158,11 +1158,12 @@ function recalculateLinkedStatuses(orderIds, invoiceIds) {
         }
       }
 
-      if (foundIndex !== -1 && orderObj && orderObj.items.length > 0) {
+      var orderItems = orderObj && Array.isArray(orderObj.items) ? orderObj.items : [];
+      if (foundIndex !== -1 && orderObj && orderItems.length > 0) {
         var allDelivered = true;
         var anyDelivered = false;
 
-        orderObj.items.forEach(function(orderItem) {
+        orderItems.forEach(function(orderItem) {
           var itemName = String(orderItem.name || '').trim();
           var orderedQty = Number(orderItem.quantity || 0);
           var deliveredQty = 0;
@@ -1194,7 +1195,7 @@ function recalculateLinkedStatuses(orderIds, invoiceIds) {
 
         // Save updated items JSON and status
         orderSheet.getRange(foundIndex, 5, 1, 2).setValues([[
-          JSON.stringify(orderObj.items),
+          JSON.stringify(orderItems),
           newStatus
         ]]);
       }
@@ -1222,11 +1223,12 @@ function recalculateLinkedStatuses(orderIds, invoiceIds) {
         }
       }
 
-      if (foundIndex !== -1 && invoiceObj && invoiceObj.items.length > 0) {
+      var invoiceItems = invoiceObj && Array.isArray(invoiceObj.items) ? invoiceObj.items : [];
+      if (foundIndex !== -1 && invoiceObj && invoiceItems.length > 0) {
         var allDelivered = true;
         var anyDelivered = false;
 
-        invoiceObj.items.forEach(function(invoiceItem) {
+        invoiceItems.forEach(function(invoiceItem) {
           var itemName = String(invoiceItem.name || '').trim();
           var invoicedQty = Number(invoiceItem.quantity || 0);
           var deliveredQty = 0;
@@ -1262,7 +1264,7 @@ function recalculateLinkedStatuses(orderIds, invoiceIds) {
 
         // Save updated items JSON and status
         invoiceSheet.getRange(foundIndex, 5, 1, 2).setValues([[
-          JSON.stringify(invoiceObj.items),
+          JSON.stringify(invoiceItems),
           newStatus
         ]]);
       }

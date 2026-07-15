@@ -74,8 +74,9 @@ function renderOrders() {
     else if (o.status === 'Partially Delivered') statusClass = 'badge-warning';
     else if (o.status === 'Completed') statusClass = 'badge-success';
 
-    const itemsCount = (o.items || []).length;
-    const totalQty = (o.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const items = Array.isArray(o.items) ? o.items : [];
+    const itemsCount = items.length;
+    const totalQty = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
 
     const tr = document.createElement('tr');
     tr.className = 'table-row-animate';
