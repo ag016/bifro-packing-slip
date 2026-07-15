@@ -97,39 +97,47 @@ function getLicenseExpiredHtml() {
  * ------------------------------------------------------------------ */
 
 function getSheet(name, create) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheets = ss.getSheets();
-  var sheet = null;
-  var searchName = name.toLowerCase().trim();
-  
-  for (var i = 0; i < sheets.length; i++) {
-    var sName = sheets[i].getName().toLowerCase().trim();
-    if (sName === searchName) {
-      sheet = sheets[i];
-      // Rename it to the canonical name if it's slightly off
-      if (sheets[i].getName() !== name) {
-        try {
-          sheets[i].setName(name);
-        } catch(e) {}
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheets = ss.getSheets();
+    var sheet = null;
+    var searchName = name.toLowerCase().trim();
+    
+    for (var i = 0; i < sheets.length; i++) {
+      var sName = sheets[i].getName().toLowerCase().trim();
+      if (sName === searchName) {
+        sheet = sheets[i];
+        // Rename it to the canonical name if it's slightly off
+        if (sheets[i].getName() !== name) {
+          try {
+            sheets[i].setName(name);
+          } catch(e) {}
+        }
+        break;
       }
-      break;
     }
-  }
-  
-  if (!sheet && create !== false) {
-    try {
-      sheet = ss.insertSheet(name);
-      initSheet(sheet, name);
-    } catch (e) {
-      // Fallback: if insert fails, maybe it already exists under some other internal name or condition
-      sheet = ss.getSheetByName(name) || ss.insertSheet();
+    
+    if (!sheet && create !== false) {
       try {
-        sheet.setName(name);
-      } catch(err) {}
-      initSheet(sheet, name);
+        sheet = ss.insertSheet(name);
+        initSheet(sheet, name);
+      } catch (e) {
+        try {
+          sheet = ss.getSheetByName(name) || ss.insertSheet();
+          if (sheet.getName() !== name) {
+            sheet.setName(name);
+          }
+          initSheet(sheet, name);
+        } catch(err) {
+          sheet = null;
+        }
+      }
     }
+    return sheet;
+  } catch (err) {
+    Logger.log("getSheet error for name " + name + ": " + err.message);
+    return null;
   }
-  return sheet;
 }
 
 function initSheet(sheet, name) {
@@ -804,30 +812,39 @@ function duplicateSlip(slipCode) {
  * ------------------------------------------------------------------ */
 
 function getOrders() {
-  checkLicenseOrThrow();
-  var sheet = getSheet(SHEETS.ORDERS);
-  var values = sheet.getDataRange().getValues();
-  var orders = [];
-  for (var i = 1; i < values.length; i++) {
-    if (values[i][0]) {
-      var items = [];
-      try {
-        items = JSON.parse(values[i][4] || '[]');
-      } catch (e) {
-        items = [];
-      }
-      orders.push({
-        id: values[i][0],
-        date: normalizeDate(values[i][1]),
-        clientId: values[i][2],
-        clientName: values[i][3],
-        items: items,
-        status: values[i][5] || 'Pending',
-        createdAt: values[i][6]
-      });
+  try {
+    checkLicenseOrThrow();
+    var sheet = getSheet(SHEETS.ORDERS);
+    if (!sheet) {
+      Logger.log("Orders sheet could not be opened or created.");
+      return [];
     }
+    var values = sheet.getDataRange().getValues();
+    var orders = [];
+    for (var i = 1; i < values.length; i++) {
+      if (values[i][0]) {
+        var items = [];
+        try {
+          items = JSON.parse(values[i][4] || '[]');
+        } catch (e) {
+          items = [];
+        }
+        orders.push({
+          id: values[i][0],
+          date: normalizeDate(values[i][1]),
+          clientId: values[i][2],
+          clientName: values[i][3],
+          items: items,
+          status: values[i][5] || 'Pending',
+          createdAt: values[i][6]
+        });
+      }
+    }
+    return orders;
+  } catch (err) {
+    Logger.log("getOrders error: " + err.message);
+    return [];
   }
-  return orders;
 }
 
 function calculateStatusFromItems(items, defaultStatus) {
@@ -855,6 +872,8 @@ function saveOrder(order) {
   if (!order.clientId || !order.clientName) throw new Error('Client selection is required.');
   
   var sheet = getSheet(SHEETS.ORDERS);
+  if (!sheet) throw new Error('Could not access or create the "Orders" sheet tab. Please make sure you have edit access to this spreadsheet.');
+  
   var values = sheet.getDataRange().getValues();
   order.createdAt = order.createdAt || new Date().toISOString();
   order.status = calculateStatusFromItems(order.items, 'Pending');
@@ -922,30 +941,39 @@ function deleteOrder(orderId) {
  * ------------------------------------------------------------------ */
 
 function getInvoices() {
-  checkLicenseOrThrow();
-  var sheet = getSheet(SHEETS.INVOICES);
-  var values = sheet.getDataRange().getValues();
-  var invoices = [];
-  for (var i = 1; i < values.length; i++) {
-    if (values[i][0]) {
-      var items = [];
-      try {
-        items = JSON.parse(values[i][4] || '[]');
-      } catch (e) {
-        items = [];
-      }
-      invoices.push({
-        id: values[i][0],
-        date: normalizeDate(values[i][1]),
-        clientId: values[i][2],
-        clientName: values[i][3],
-        items: items,
-        status: values[i][5] || 'Unpaid',
-        createdAt: values[i][6]
-      });
+  try {
+    checkLicenseOrThrow();
+    var sheet = getSheet(SHEETS.INVOICES);
+    if (!sheet) {
+      Logger.log("Invoices sheet could not be opened or created.");
+      return [];
     }
+    var values = sheet.getDataRange().getValues();
+    var invoices = [];
+    for (var i = 1; i < values.length; i++) {
+      if (values[i][0]) {
+        var items = [];
+        try {
+          items = JSON.parse(values[i][4] || '[]');
+        } catch (e) {
+          items = [];
+        }
+        invoices.push({
+          id: values[i][0],
+          date: normalizeDate(values[i][1]),
+          clientId: values[i][2],
+          clientName: values[i][3],
+          items: items,
+          status: values[i][5] || 'Unpaid',
+          createdAt: values[i][6]
+        });
+      }
+    }
+    return invoices;
+  } catch (err) {
+    Logger.log("getInvoices error: " + err.message);
+    return [];
   }
-  return invoices;
 }
 
 function saveInvoice(invoice) {
@@ -954,6 +982,8 @@ function saveInvoice(invoice) {
   if (!invoice.clientId || !invoice.clientName) throw new Error('Client selection is required.');
   
   var sheet = getSheet(SHEETS.INVOICES);
+  if (!sheet) throw new Error('Could not access or create the "Invoices" sheet tab. Please make sure you have edit access to this spreadsheet.');
+  
   var values = sheet.getDataRange().getValues();
   invoice.createdAt = invoice.createdAt || new Date().toISOString();
   invoice.status = calculateStatusFromItems(invoice.items, 'Unpaid');
