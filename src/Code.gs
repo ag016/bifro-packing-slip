@@ -1,0 +1,632 @@
+/**
+ * Kodus Home - Packing Slip Web App
+ * Google Apps Script backend
+ */
+
+const SHEETS = {
+  SETTINGS: 'Settings',
+  CLIENTS: 'Clients',
+  PACKING_SLIPS: 'PackingSlips',
+  USERS: 'Users'
+};
+
+const COUNTERS = {
+  CLIENT: 'clientCounter',
+  SLIP: 'slipCounter',
+  USER: 'userCounter'
+};
+
+/* ------------------------------------------------------------------
+ * Helpers
+ * ------------------------------------------------------------------ */
+
+function getSheet(name, create) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(name);
+  if (!sheet && create !== false) {
+    sheet = ss.insertSheet(name);
+    initSheet(sheet, name);
+  }
+  return sheet;
+}
+
+function initSheet(sheet, name) {
+  if (name === SHEETS.SETTINGS) {
+    sheet.getRange(1, 1, 1, 2).setValues([['Key', 'Value']]).setFontWeight('bold');
+    var defaults = [
+      ['CompanyName', 'My Company'],
+      ['Address', ''],
+      ['Phone', '']
+    ];
+    if (sheet.getLastRow() < 2) sheet.getRange(2, 1, defaults.length, 2).setValues(defaults);
+  } else if (name === SHEETS.CLIENTS) {
+    sheet.getRange(1, 1, 1, 6).setValues([['Client ID', 'Client Name', 'Company Name', 'Phone', 'Address', 'Created At']]).setFontWeight('bold');
+  } else if (name === SHEETS.PACKING_SLIPS) {
+    sheet.getRange(1, 1, 1, 11).setValues([['Slip Code', 'Date', 'Client ID', 'Client Name', 'Client Company', 'Client Phone', 'Client Address', 'Items JSON', 'Total Quantity', 'Notes', 'Created At']]).setFontWeight('bold');
+  } else if (name === SHEETS.USERS) {
+    sheet.getRange(1, 1, 1, 5).setValues([['User ID', 'Name', 'Email', 'Role', 'Created At']]).setFontWeight('bold');
+  }
+}
+
+/**
+ * Generates the next sequential ID thread-safely using LockService.
+ */
+function getNextId(key, prefix) {
+  var lock = LockService.getScriptLock();
+  try {
+    // Wait for up to 15 seconds to acquire lock
+    lock.waitLock(15000);
+  } catch (e) {
+    throw new Error('Timeout acquiring lock to generate unique ID. Please try again.');
+  }
+
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var propKey = 'counter_' + key;
+    var val = props.getProperty(propKey);
+    var num = val ? parseInt(val, 10) : 0;
+    num += 1;
+    props.setProperty(propKey, num.toString());
+    return prefix + String(num).padStart(4, '0');
+  } finally {
+    // Make sure we release the lock even if code fails
+    lock.releaseLock();
+  }
+}
+
+function getSettingsSheetValues() {
+  var sheet = getSheet(SHEETS.SETTINGS);
+  var values = sheet.getDataRange().getValues();
+  var settings = {};
+  for (var i = 1; i < values.length; i++) {
+    settings[values[i][0]] = values[i][1];
+  }
+  return settings;
+}
+
+function getUserFirstName(email) {
+  if (!email) return 'Admin';
+  var username = email.split('@')[0].toLowerCase();
+  var parts = username.split(/[\._-]/);
+  if (parts.length > 0 && parts[0]) {
+    var name = parts[0];
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+  return 'Admin';
+}
+
+function getCurrentUserEmail() {
+  var email = '';
+  try {
+    email = Session.getActiveUser().getEmail();
+    if (!email) {
+      email = Session.getEffectiveUser().getEmail();
+    }
+  } catch (e) {
+    email = '';
+  }
+  return email;
+}
+
+function getUserAccess() {
+  var userEmail = '';
+  try {
+    userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      userEmail = Session.getEffectiveUser().getEmail();
+    }
+  } catch (e) {
+    userEmail = '';
+  }
+
+  var authUrl = '';
+  try {
+    authUrl = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL).getAuthorizationUrl();
+  } catch (e) {
+    Logger.log('Could not get auth URL: ' + e.message);
+  }
+
+  // Load company settings if available to render uploader brand on access screens
+  var companyName = 'Packing Slip Software';
+  var logoBase64 = '';
+  try {
+    var settings = getSettingsSheetValues();
+    if (settings.CompanyName) companyName = settings.CompanyName;
+    if (settings.LogoBase64) logoBase64 = settings.LogoBase64;
+  } catch (e) {
+    Logger.log('Could not load company settings for access block: ' + e.message);
+  }
+
+  if (!userEmail) {
+    return { loggedIn: false, email: '', name: 'Guest', access: false, role: 'Viewer', authUrl: authUrl, companyName: companyName, logoBase64: logoBase64, message: 'Please sign in with your Google account to continue.' };
+  }
+
+  var firstName = getUserFirstName(userEmail);
+  
+  // 1. Check spreadsheet access
+  var ss;
+  try {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+    // Force a read operation to trigger Google's permission check immediately
+    ss.getSheets();
+  } catch (e) {
+    return { loggedIn: true, email: userEmail, name: firstName, access: false, role: 'Viewer', authUrl: authUrl, companyName: companyName, logoBase64: logoBase64, message: 'You do not have access to this Google Sheet. Details: ' + e.toString() + '. Ask the owner to share it with you.' };
+  }
+
+  // 2. Ensure Users sheet is initialized
+  var usersSheet = getSheet(SHEETS.USERS);
+  var usersData = usersSheet.getDataRange().getValues();
+  
+  // If the sheet only has headers (empty user list), register current user as default Admin
+  if (usersData.length <= 1) {
+    var ownerName = firstName + ' ' + (userEmail.split('@')[0].split(/[\._-]/)[1] || 'Admin');
+    usersSheet.appendRow(['U-0001', ownerName, userEmail, 'Admin', new Date().toISOString()]);
+    usersData = usersSheet.getDataRange().getValues(); // refresh data
+  }
+
+  // 3. Match user email in Users list
+  var authorized = false;
+  var userRole = 'Viewer';
+  var displayName = firstName;
+
+  for (var i = 1; i < usersData.length; i++) {
+    var emailInSheet = String(usersData[i][2]).trim().toLowerCase();
+    if (emailInSheet === userEmail.toLowerCase()) {
+      authorized = true;
+      displayName = usersData[i][1];
+      userRole = usersData[i][3];
+      break;
+    }
+  }
+
+  if (!authorized) {
+    return { 
+      loggedIn: true, 
+      email: userEmail, 
+      name: displayName, 
+      access: false, 
+      role: 'Viewer', 
+      authUrl: authUrl,
+      companyName: companyName,
+      logoBase64: logoBase64,
+      message: 'Access Restricted. Your Google Account (' + userEmail + ') is not registered in this application. Please ask an Admin to register you.' 
+    };
+  }
+
+  return { loggedIn: true, email: userEmail, name: displayName, access: true, role: userRole, companyName: companyName, logoBase64: logoBase64, message: '' };
+}
+
+function getUsers() {
+  var callerAccess = getUserAccess();
+  if (!callerAccess.access || callerAccess.role !== 'Admin') {
+    throw new Error('Unauthorized access: Only Admins can manage users.');
+  }
+
+  var sheet = getSheet(SHEETS.USERS);
+  var values = sheet.getDataRange().getValues();
+  var users = [];
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][0]) {
+      users.push({
+        id: values[i][0],
+        name: values[i][1],
+        email: values[i][2],
+        role: values[i][3],
+        createdAt: values[i][4]
+      });
+    }
+  }
+  return users;
+}
+
+function saveUser(user) {
+  var callerAccess = getUserAccess();
+  if (!callerAccess.access || callerAccess.role !== 'Admin') {
+    throw new Error('Unauthorized access: Only Admins can manage users.');
+  }
+
+  if (!user || !user.name || !user.name.trim() || !user.email || !user.email.trim()) {
+    throw new Error('User Name and Email are required.');
+  }
+
+  user.email = user.email.trim().toLowerCase();
+  var sheet = getSheet(SHEETS.USERS);
+  var data = sheet.getDataRange().getValues();
+
+  var shareErrors = [];
+
+  // Try programmatically sharing spreadsheet and script project with the user
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    ss.addEditor(user.email);
+  } catch (e) {
+    shareErrors.push('Sheet sharing failed: ' + e.message);
+  }
+
+  try {
+    var scriptId = ScriptApp.getScriptId();
+    var scriptFile = DriveApp.getFileById(scriptId);
+    if (user.role === 'Admin') {
+      scriptFile.addEditor(user.email);
+    } else {
+      scriptFile.addViewer(user.email);
+    }
+  } catch (e) {
+    shareErrors.push('Script sharing failed: ' + e.message);
+  }
+
+  if (user.id) {
+    // Update existing user details
+    var found = false;
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === user.id) {
+        sheet.getRange(i + 1, 2, 1, 3).setValues([[
+          user.name,
+          user.email,
+          user.role || 'User'
+        ]]);
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      throw new Error('User ID ' + user.id + ' not found.');
+    }
+  } else {
+    // Check duplicate email
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][2]).trim().toLowerCase() === user.email) {
+        throw new Error('User with email ' + user.email + ' already exists.');
+      }
+    }
+    // Create new user record
+    user.id = getNextId(COUNTERS.USER, 'U-');
+    user.createdAt = new Date().toISOString();
+    sheet.appendRow([user.id, user.name, user.email, user.role || 'User', user.createdAt]);
+  }
+  
+  user.shareWarnings = shareErrors;
+  return user;
+}
+
+function deleteUser(userId) {
+  var callerAccess = getUserAccess();
+  if (!callerAccess.access || callerAccess.role !== 'Admin') {
+    throw new Error('Unauthorized access: Only Admins can manage users.');
+  }
+
+  var sheet = getSheet(SHEETS.USERS);
+  var data = sheet.getDataRange().getValues();
+  
+  var targetEmail = '';
+  var foundIndex = -1;
+
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === userId) {
+      targetEmail = data[i][2];
+      foundIndex = i + 1;
+      break;
+    }
+  }
+
+  if (foundIndex === -1) {
+    throw new Error('User ID ' + userId + ' not found.');
+  }
+
+  if (targetEmail.toLowerCase() === callerAccess.email.toLowerCase()) {
+    throw new Error('You cannot delete your own administrator account.');
+  }
+
+  // Attempt to revoke permissions from spreadsheet and script
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    ss.removeEditor(targetEmail);
+  } catch (e) {
+    Logger.log('Could not revoke spreadsheet editor: ' + e.message);
+  }
+
+  try {
+    var scriptId = ScriptApp.getScriptId();
+    var scriptFile = DriveApp.getFileById(scriptId);
+    scriptFile.removeEditor(targetEmail);
+    scriptFile.removeViewer(targetEmail);
+  } catch (e) {
+    Logger.log('Could not revoke script access: ' + e.message);
+  }
+
+  sheet.deleteRow(foundIndex);
+  return true;
+}
+
+/* ------------------------------------------------------------------
+ * Web app entry point
+ * ------------------------------------------------------------------ */
+
+function doGet(e) {
+  // Serve the PWA manifest from a real URL so browsers recognize it.
+  if (e && e.parameter && e.parameter.manifest === 'true') {
+    return serveManifest();
+  }
+
+  var settings = getSettingsSheetValues();
+  var companyName = settings.CompanyName || 'Packing Slip Software';
+  var template = HtmlService.createTemplateFromFile('index');
+  template.access = access;
+  return template.evaluate()
+    .setTitle(companyName + ' - Packing Slips')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function getScriptUrl() {
+  return ScriptApp.getService().getUrl();
+}
+
+function serveManifest() {
+  var settings = getSettingsSheetValues();
+  var companyName = settings.CompanyName || 'Packing Slip Software';
+  // SVG icon with a package layout emoji, works at any size.
+  var svgIcon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='80' fill='%230f172a'/%3E%3Ctext x='256' y='340' font-size='280' text-anchor='middle' fill='%23f59e0b'%3E%F0%9F%9B%8F%EF%B8%8F%3C/text%3E%3C/svg%3E";
+  var manifest = {
+    name: companyName,
+    short_name: companyName.split(' ')[0] || 'PackingSlip',
+    start_url: getScriptUrl(),
+    display: 'standalone',
+    background_color: '#0f172a',
+    theme_color: '#0f172a',
+    description: 'Create, print, and track professional packing slips for ' + companyName + '.',
+    icons: [
+      { src: svgIcon, sizes: '192x192', type: 'image/svg+xml' },
+      { src: svgIcon, sizes: '512x512', type: 'image/svg+xml' }
+    ]
+  };
+  return ContentService.createTextOutput(JSON.stringify(manifest))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+/* ------------------------------------------------------------------
+ * Exposed API
+ * ------------------------------------------------------------------ */
+
+function getAccess() {
+  return getUserAccess();
+}
+
+function getSettings() {
+  return getSettingsSheetValues();
+}
+
+function saveSettings(settings) {
+  if (!settings || !settings.CompanyName || !settings.CompanyName.trim()) {
+    throw new Error('Company Name is required.');
+  }
+
+  var sheet = getSheet(SHEETS.SETTINGS);
+  var values = sheet.getDataRange().getValues();
+  var existing = {};
+  for (var i = 1; i < values.length; i++) {
+    existing[values[i][0]] = i + 1;
+  }
+  for (var key in settings) {
+    if (existing[key]) {
+      sheet.getRange(existing[key], 2).setValue(settings[key]);
+    } else {
+      sheet.appendRow([key, settings[key]]);
+    }
+  }
+  return getSettingsSheetValues();
+}
+
+function getClients() {
+  var sheet = getSheet(SHEETS.CLIENTS);
+  var values = sheet.getDataRange().getValues();
+  var clients = [];
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][0]) {
+      clients.push({
+        id: values[i][0],
+        name: values[i][1],
+        company: values[i][2],
+        phone: values[i][3],
+        address: values[i][4],
+        createdAt: values[i][5]
+      });
+    }
+  }
+  return clients;
+}
+
+function saveClient(client) {
+  if (!client || !client.name || !client.name.trim()) {
+    throw new Error('Client Name is required.');
+  }
+
+  var sheet = getSheet(SHEETS.CLIENTS);
+  
+  if (client.id) {
+    // Update existing client details
+    var data = sheet.getDataRange().getValues();
+    var found = false;
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === client.id) {
+        // Update Columns: Name, Company, Phone, Address (columns 2 to 5, which is 1-indexed range of columns)
+        sheet.getRange(i + 1, 2, 1, 4).setValues([[
+          client.name,
+          client.company || '',
+          client.phone || '',
+          client.address || ''
+        ]]);
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      throw new Error('Client ID ' + client.id + ' not found for update.');
+    }
+  } else {
+    // Create new client
+    client.id = getNextId(COUNTERS.CLIENT, 'C-');
+    client.createdAt = new Date().toISOString();
+    sheet.appendRow([client.id, client.name, client.company || '', client.phone || '', client.address || '', client.createdAt]);
+  }
+  return client;
+}
+
+function normalizeDate(d) {
+  if (!d) return '';
+  if (typeof d === 'string') return d;
+  if (d instanceof Date) {
+    var year = d.getFullYear();
+    var month = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return year + '-' + month + '-' + day;
+  }
+  return String(d);
+}
+
+function ensurePackingSlipsHeader(sheet) {
+  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (header.length < 14 || header[10] !== 'Invoice Number' || header[12] !== 'Created By' || header[13] !== 'Edited By') {
+    var newHeader = ['Slip Code', 'Date', 'Client ID', 'Client Name', 'Client Company', 'Client Phone', 'Client Address', 'Items JSON', 'Total Quantity', 'Notes', 'Invoice Number', 'Created At', 'Created By', 'Edited By'];
+    sheet.getRange(1, 1, 1, newHeader.length).setValues([newHeader]).setFontWeight('bold');
+  }
+}
+
+function getPackingSlips() {
+  var sheet = getSheet(SHEETS.PACKING_SLIPS);
+  ensurePackingSlipsHeader(sheet);
+  var values = sheet.getDataRange().getValues();
+  var slips = [];
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][0]) {
+      var items = [];
+      try {
+        items = JSON.parse(values[i][7] || '[]');
+      } catch (e) {
+        items = [];
+      }
+      slips.push({
+        slipCode: values[i][0],
+        date: normalizeDate(values[i][1]),
+        clientId: values[i][2],
+        clientName: values[i][3],
+        clientCompany: values[i][4],
+        clientPhone: values[i][5],
+        clientAddress: values[i][6],
+        items: items,
+        totalQuantity: values[i][8],
+        notes: values[i][9],
+        invoiceNumber: values[i][10] || '',
+        createdAt: values[i][11],
+        createdBy: values[i][12] || '',
+        editedBy: values[i][13] || ''
+      });
+    }
+  }
+  return slips;
+}
+
+function savePackingSlip(slip) {
+  if (!slip) {
+    throw new Error('Packing slip data is empty.');
+  }
+  if (!slip.clientId || !slip.clientName) {
+    throw new Error('Client selection is required.');
+  }
+  if (!slip.date) {
+    throw new Error('Date is required.');
+  }
+  if (!Array.isArray(slip.items) || slip.items.length === 0) {
+    throw new Error('Packing slip must contain at least one item.');
+  }
+  
+  // Validate items on the backend
+  var totalQty = 0;
+  for (var i = 0; i < slip.items.length; i++) {
+    var item = slip.items[i];
+    if (!item.name || !item.name.trim()) {
+      throw new Error('Product name in item ' + (i + 1) + ' is blank.');
+    }
+    var qty = Number(item.quantity);
+    if (isNaN(qty) || qty <= 0) {
+      throw new Error('Quantity for product "' + item.name + '" must be greater than 0.');
+    }
+    totalQty += qty;
+  }
+  slip.totalQuantity = totalQty;
+
+  var sheet = getSheet(SHEETS.PACKING_SLIPS);
+  var currentUser = getCurrentUserEmail();
+  var originalCreatedBy = '';
+
+  if (slip.slipCode) {
+    // If it's an edit, find the old active row(s) and rename their slipCode to archive them
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === slip.slipCode) {
+        originalCreatedBy = data[i][12] || currentUser;
+        sheet.getRange(i + 1, 1).setValue(slip.slipCode + '-rev' + Date.now());
+      }
+    }
+  } else {
+    // Brand new slip
+    slip.slipCode = getNextId(COUNTERS.SLIP, 'PS-');
+  }
+  slip.createdAt = new Date().toISOString();
+
+  // Preserve original creator on edits; use current user for new slips
+  slip.createdBy = originalCreatedBy || currentUser;
+  slip.editedBy = currentUser;
+
+  ensurePackingSlipsHeader(sheet);
+  sheet.appendRow([
+    slip.slipCode,
+    slip.date,
+    slip.clientId,
+    slip.clientName,
+    slip.clientCompany || '',
+    slip.clientPhone || '',
+    slip.clientAddress || '',
+    JSON.stringify(slip.items),
+    slip.totalQuantity,
+    slip.notes || '',
+    slip.invoiceNumber || '',
+    slip.createdAt,
+    slip.createdBy,
+    slip.editedBy
+  ]);
+  return slip;
+}
+
+function getSuggestions(clientId) {
+  if (!clientId) return [];
+  var slips = getPackingSlips();
+  var suggestions = {};
+  for (var i = 0; i < slips.length; i++) {
+    if (slips[i].clientId === clientId && slips[i].items) {
+      for (var j = 0; j < slips[i].items.length; j++) {
+        var name = String(slips[i].items[j].name || '').trim();
+        if (name) suggestions[name] = true;
+      }
+    }
+  }
+  return Object.keys(suggestions).sort();
+}
+
+function duplicateSlip(slipCode) {
+  if (!slipCode) return null;
+  var slips = getPackingSlips();
+  for (var i = 0; i < slips.length; i++) {
+    if (slips[i].slipCode === slipCode) {
+      var copy = JSON.parse(JSON.stringify(slips[i]));
+      copy.slipCode = '';
+      copy.createdAt = '';
+      return copy;
+    }
+  }
+  return null;
+}

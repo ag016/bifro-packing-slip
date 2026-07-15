@@ -1,0 +1,206 @@
+<script>
+/**
+ * Kodus Home - Client Controller
+ * Client management event handlers and rendering
+ */
+
+let editingClientId = null;
+
+function loadClients(callback) {
+  google.script.run
+    .withSuccessHandler(list => {
+      clients = list || [];
+      renderClients();
+      populateClientSelect();
+      populateFilterClient();
+      if (typeof callback === 'function') callback();
+    })
+    .withFailureHandler(handleError)
+    .getClients();
+}
+
+function renderClients() {
+  const tbody = $('#clients-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  
+  if (!clients.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No clients found. Add a client above to start.</td></tr>';
+    return;
+  }
+  
+  // Display clients starting with the most recent
+  clients.slice().reverse().forEach(c => {
+    const tr = document.createElement('tr');
+    tr.className = 'table-row-animate';
+    tr.innerHTML = `
+      <td><span class="badge badge-accent">${escapeHtml(c.id || '')}</span></td>
+      <td><strong>${escapeHtml(c.name || '')}</strong></td>
+      <td>${escapeHtml(c.company || '—')}</td>
+      <td>${escapeHtml(c.phone || '—')}</td>
+      <td><span class="text-truncate" title="${escapeHtml(c.address || '')}">${escapeHtml(c.address || '—')}</span></td>
+      <td>
+        <button class="btn btn-secondary-soft btn-xs" onclick="editClient('${c.id}')" title="Edit Client" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px;">
+          <i data-lucide="edit-2" style="width: 12px; height: 12px;"></i> Edit
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+  
+  if (window.lucide) lucide.createIcons();
+}
+
+function editClient(clientId) {
+  const c = clients.find(x => x.id === clientId);
+  if (!c) return;
+  
+  editingClientId = c.id;
+  
+  // Populate form fields
+  $('#client-name').value = c.name || '';
+  $('#client-company').value = c.company || '';
+  $('#client-phone').value = c.phone || '';
+  $('#client-address').value = c.address || '';
+  
+  // Show cancel button
+  const cancelBtn = $('#btn-cancel-client-edit');
+  if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+  
+  // Update card header and submit button
+  const formCard = $('#clients .card:first-child');
+  if (formCard) {
+    const title = formCard.querySelector('h2');
+    if (title) title.innerHTML = `<i data-lucide="edit" style="color:var(--accent);"></i> Edit Client Details: ${c.id}`;
+    
+    const submitBtn = $('#btn-save-client');
+    if (submitBtn) submitBtn.innerHTML = '<i data-lucide="check-circle"></i> Update Client Details';
+  }
+  
+  // Scroll to form
+  $('#client-form').scrollIntoView({ behavior: 'smooth' });
+  if (window.lucide) lucide.createIcons();
+}
+
+function cancelClientEdit() {
+  editingClientId = null;
+  $('#client-form').reset();
+  
+  // Hide cancel button
+  const cancelBtn = $('#btn-cancel-client-edit');
+  if (cancelBtn) cancelBtn.style.display = 'none';
+  
+  // Restore form header and button text
+  const formCard = $('#clients .card:first-child');
+  if (formCard) {
+    const title = formCard.querySelector('h2');
+    if (title) title.innerHTML = '<i data-lucide="user-plus" style="color:var(--accent);"></i> Register New Client';
+    
+    const submitBtn = $('#btn-save-client');
+    if (submitBtn) submitBtn.innerHTML = '<i data-lucide="plus-circle"></i> Save Client Details';
+  }
+  
+  if (window.lucide) lucide.createIcons();
+}
+
+function saveClient() {
+  const clientName = $('#client-name').value.trim();
+  const clientCompany = $('#client-company').value.trim();
+  const clientPhone = $('#client-phone').value.trim();
+  const clientAddress = $('#client-address').value.trim();
+  
+  if (!clientName) {
+    toast('Client Name is required.', 'danger');
+    return;
+  }
+  
+  const client = {
+    id: editingClientId || '',
+    name: clientName,
+    company: clientCompany,
+    phone: clientPhone,
+    address: clientAddress
+  };
+  
+  // Disable button to prevent double submit
+  const btn = $('#btn-save-client');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Saving...';
+  }
+  
+  google.script.run
+    .withSuccessHandler(c => {
+      if (editingClientId) {
+        toast('Client details updated successfully!', 'success');
+      } else {
+        toast('Client saved successfully with ID: ' + c.id, 'success');
+      }
+      
+      cancelClientEdit();
+      loadClients();
+    })
+    .withFailureHandler(err => {
+      handleError(err);
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = editingClientId ? '<i data-lucide="check-circle"></i> Update Client Details' : '<i data-lucide="plus-circle"></i> Save Client Details';
+      }
+      if (window.lucide) lucide.createIcons();
+    })
+    .saveClient(client);
+}
+
+function populateClientSelect() {
+  const sel = $('#slip-client');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="new" class="bold-option">+ Add new client</option>';
+  
+  clients.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = `${c.name} ${c.company ? ' - ' + c.company : ''} [${c.id}]`;
+    sel.appendChild(opt);
+  });
+  sel.value = current;
+}
+
+function toggleNewClient() {
+  const div = $('#new-client-fields');
+  if (!div) return;
+  const selectVal = $('#slip-client').value;
+  
+  if (selectVal === 'new') {
+    div.style.display = 'block';
+    $('#new-client-name').required = true;
+    $('#new-client-name').value = '';
+    $('#new-client-company').value = '';
+    $('#new-client-phone').value = '';
+    $('#new-client-address').value = '';
+    // Visual cue: scroll to and highlight the new client fields
+    setTimeout(() => {
+      div.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      highlightElement(div);
+      $('#new-client-name').focus();
+    }, 50);
+  } else if (selectVal) {
+    div.style.display = 'block';
+    $('#new-client-name').required = true;
+    const c = clients.find(x => x.id === selectVal);
+    if (c) {
+      $('#new-client-name').value = c.name || '';
+      $('#new-client-company').value = c.company || '';
+      $('#new-client-phone').value = c.phone || '';
+      $('#new-client-address').value = c.address || '';
+    }
+  } else {
+    div.style.display = 'none';
+    $('#new-client-name').required = false;
+    $('#new-client-name').value = '';
+    $('#new-client-company').value = '';
+    $('#new-client-phone').value = '';
+    $('#new-client-address').value = '';
+  }
+}
+</script>

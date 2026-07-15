@@ -1,0 +1,916 @@
+<script>
+/**
+ * Kodus Home - Packing Slip Controller
+ * Form management, item grids, searching, filtering, and previewing
+ */
+
+function addItemRow(name, qty, scrollToRow) {
+  const container = $('#items-container');
+  if (!container) return;
+  
+  const row = document.createElement('div');
+  row.className = 'item-row card-sm-inset animate-fade-in';
+  
+  // Use unique timestamp to coordinate names and labels
+  const id = 'item-' + Date.now() + '-' + Math.floor(Math.random()*1000);
+  
+  row.innerHTML = `
+    <div class="field-group flex-3">
+      <label for="${id}-name" class="label-inline">Product Description</label>
+      <input type="text" id="${id}-name" class="item-name" placeholder="Start typing product name..." value="${escapeHtml(name || '')}" list="suggestions-list" required>
+    </div>
+    <div class="field-group flex-1">
+      <label for="${id}-qty" class="label-inline">Quantity</label>
+      <input type="number" id="${id}-qty" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty || 1}" required>
+    </div>
+    <div class="btn-delete-container">
+      <button type="button" class="btn-icon btn-danger-soft" onclick="removeItemRow(this)" title="Remove Item">
+        <i data-lucide="trash-2"></i>
+      </button>
+    </div>
+  `;
+  
+  container.appendChild(row);
+  if (window.lucide) lucide.createIcons();
+  
+  if (scrollToRow !== false) {
+    setTimeout(() => {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      highlightElement(row);
+    }, 50);
+  }
+  
+  return row;
+}
+
+function highlightElement(el) {
+  if (!el) return;
+  el.classList.add('highlight-pulse');
+  setTimeout(() => el.classList.remove('highlight-pulse'), 1500);
+}
+
+function removeItemRow(button) {
+  const rows = $$('#items-container .item-row');
+  if (rows.length <= 1) {
+    toast('A packing slip must contain at least 1 item.', 'warning');
+    return;
+  }
+  const row = button.closest('.item-row');
+  if (row) {
+    row.classList.add('animate-fade-out');
+    setTimeout(() => row.remove(), 250);
+  }
+}
+
+function loadSuggestions(clientId) {
+  if (!clientId || clientId === 'new') {
+    suggestions = [];
+    renderSuggestions();
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(list => {
+      suggestions = list || [];
+      renderSuggestions();
+    })
+    .withFailureHandler(handleError)
+    .getSuggestions(clientId);
+}
+
+function renderSuggestions() {
+  const box = $('#suggestions-box');
+  if (!box) return;
+  
+  box.innerHTML = '<datalist id="suggestions-list"></datalist>';
+  const list = $('#suggestions-list');
+  
+  if (!suggestions.length) {
+    box.style.display = 'none';
+    return;
+  }
+  
+  box.style.display = 'block';
+  
+  // Create chips for quick clicking
+  const chipContainer = document.createElement('div');
+  chipContainer.className = 'chip-container';
+  
+  const title = document.createElement('div');
+  title.className = 'suggestions-title';
+  title.innerHTML = '<i data-lucide="sparkles" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Previously ordered items (click to add):';
+  chipContainer.appendChild(title);
+  
+  suggestions.forEach(s => {
+    // Add to datalist for input autocompletes
+    const opt = document.createElement('option');
+    opt.value = s;
+    list.appendChild(opt);
+    
+    // Add as quick chip
+    const chip = document.createElement('span');
+    chip.className = 'chip-suggestion';
+    chip.textContent = s;
+    chip.onclick = () => {
+      // Find last empty row name and set it, or add new row
+      const rows = $$('#items-container .item-row');
+      let filled = false;
+      for (let i = 0; i < rows.length; i++) {
+        const inputName = rows[i].querySelector('.item-name');
+        if (inputName && !inputName.value.trim()) {
+          inputName.value = s;
+          filled = true;
+          break;
+        }
+      }
+      if (!filled) {
+        addItemRow(s, 1);
+      }
+      toast('Added item: ' + s, 'success');
+    };
+    chipContainer.appendChild(chip);
+  });
+  
+  box.appendChild(chipContainer);
+  if (window.lucide) lucide.createIcons();
+}
+
+function gatherItems() {
+  const rows = $$('#items-container .item-row');
+  const items = [];
+  let valid = true;
+  let firstIncompleteRow = null;
+  let firstIncompleteField = null;
+  
+  rows.forEach((row, idx) => {
+    const nameEl = row.querySelector('.item-name');
+    const qtyEl = row.querySelector('.item-qty');
+    
+    const name = nameEl ? nameEl.value.trim() : '';
+    const qtyVal = qtyEl ? qtyEl.value : '';
+    const quantity = parseInt(qtyVal, 10);
+    
+    if (!name && !qtyVal) {
+      // Completely blank row: mark for removal
+      row.dataset.removeBlank = 'true';
+      return;
+    }
+    
+    if (!name) {
+      row.dataset.removeBlank = 'false';
+      toast(`Row ${idx + 1}: Product description is required.`, 'danger');
+      if (!firstIncompleteRow) {
+        firstIncompleteRow = row;
+        firstIncompleteField = nameEl;
+      }
+      return;
+    }
+    
+    if (isNaN(quantity) || quantity <= 0) {
+      row.dataset.removeBlank = 'false';
+      toast(`Row ${idx + 1}: Quantity must be a valid positive integer.`, 'danger');
+      if (!firstIncompleteRow) {
+        firstIncompleteRow = row;
+        firstIncompleteField = qtyEl;
+      }
+      valid = false;
+      return;
+    }
+    
+    row.dataset.removeBlank = 'false';
+    items.push({ name, quantity });
+  });
+  
+  // Remove blank rows from the DOM
+  $$('#items-container .item-row[data-remove-blank="true"]').forEach(row => {
+    row.remove();
+  });
+  
+  // If there are no items after cleanup, ensure at least one empty row remains for UX
+  if (items.length === 0 && valid) {
+    addItemRow('', 1, false);
+  }
+  
+  // Scroll to first incomplete row if any
+  if (firstIncompleteRow) {
+    setTimeout(() => {
+      firstIncompleteRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      highlightElement(firstIncompleteRow);
+      if (firstIncompleteField) firstIncompleteField.focus();
+    }, 50);
+    valid = false;
+  }
+  
+  return valid ? items : null;
+}
+
+function startNewSlip() {
+  resetSlipForm();
+  showPage('new-slip');
+}
+
+function savePackingSlip() {
+  const clientId = $('#slip-client').value;
+  const slipDate = $('#slip-date').value;
+  const slipInvoice = $('#slip-invoice').value.trim();
+  const slipNotes = $('#slip-notes').value.trim();
+  
+  if (!slipDate) {
+    toast('Date is required.', 'danger');
+    return;
+  }
+  
+  if (!clientId) {
+    toast('Please select a client or create a new one.', 'danger');
+    $('#slip-client').focus();
+    return;
+  }
+  
+  const client = {
+    id: clientId === 'new' ? '' : clientId,
+    name: $('#new-client-name').value.trim(),
+    company: $('#new-client-company').value.trim(),
+    phone: $('#new-client-phone').value.trim(),
+    address: $('#new-client-address').value.trim()
+  };
+  
+  if (!client.name) {
+    toast('Please fill in client name under Client Details', 'danger');
+    $('#new-client-name').focus();
+    return;
+  }
+  
+  const items = gatherItems();
+  if (items === null) return; // validation failed inside gatherItems
+  if (items.length === 0) {
+    toast('Please add at least one product item.', 'danger');
+    return;
+  }
+  
+  const slip = {
+    date: slipDate,
+    clientId: client.id || '',
+    clientName: client.name || '',
+    clientCompany: client.company || '',
+    clientPhone: client.phone || '',
+    clientAddress: client.address || '',
+    items: items,
+    notes: slipNotes,
+    invoiceNumber: slipInvoice
+  };
+  
+  if (currentSlip && currentSlip.slipCode) {
+    slip.slipCode = currentSlip.slipCode;
+  }
+  
+  // Disable button to prevent double clicks
+  const saveBtn = $('#btn-save-slip');
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner"></span> Saving...';
+  }
+  
+  // Always save/update client in backend first to keep client directory updated
+  google.script.run
+    .withSuccessHandler(savedClient => {
+      slip.clientId = savedClient.id;
+      // Also update the local 'clients' array so the dropdown matches immediately
+      const idx = clients.findIndex(c => c.id === savedClient.id);
+      if (idx !== -1) {
+        clients[idx] = savedClient;
+      } else {
+        clients.push(savedClient);
+      }
+      populateClientSelect(savedClient.id);
+      doSaveSlip(slip);
+    })
+    .withFailureHandler(err => {
+      handleError(err);
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = 'Save Packing Slip';
+      }
+    })
+    .saveClient(client);
+}
+
+function doSaveSlip(slip) {
+  google.script.run
+    .withSuccessHandler(saved => {
+      currentSlip = saved;
+      toast('Packing slip saved successfully: ' + saved.slipCode, 'success');
+      
+      const printBtn = $('#btn-print-slip');
+      if (printBtn) printBtn.style.display = 'inline-flex';
+      
+      $('#slip-form-title').textContent = 'Packing Slip ' + saved.slipCode;
+      
+      const saveBtn = $('#btn-save-slip');
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = 'Save Packing Slip';
+      }
+      
+      loadClients();
+      loadHome();
+    })
+    .withFailureHandler(err => {
+      handleError(err);
+      const saveBtn = $('#btn-save-slip');
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = 'Save Packing Slip';
+      }
+    })
+    .savePackingSlip(slip);
+}
+
+function printCurrentSlip() {
+  if (currentSlip) {
+    generatePDF(currentSlip, settings);
+  } else {
+    toast('No slip is currently loaded to print.', 'warning');
+  }
+}
+
+function printSlipByCode(slipCode) {
+  const s = slips.find(x => x.slipCode === slipCode);
+  if (!s) {
+    toast('Packing slip code ' + slipCode + ' not found.', 'danger');
+    return;
+  }
+  generatePDF(s, settings);
+}
+
+function resetSlipForm() {
+  $('#slip-form').reset();
+  $('#items-container').innerHTML = '';
+  addItemRow('', 1, false);
+  toggleNewClient();
+  currentSlip = null;
+  
+  const printBtn = $('#btn-print-slip');
+  if (printBtn) printBtn.style.display = 'none';
+  
+  $('#slip-form-title').textContent = 'Create New Packing Slip';
+  $('#slip-date').valueAsDate = new Date();
+}
+
+function loadSlipForEdit(slipCode) {
+  const slip = slips.find(x => x.slipCode === slipCode);
+  if (!slip) {
+    toast('Slip not found for editing', 'danger');
+    return;
+  }
+  
+  resetSlipForm();
+  currentSlip = slip;
+  
+  $('#slip-date').value = slip.date;
+  $('#slip-invoice').value = slip.invoiceNumber || '';
+  populateClientSelect();
+  if (slip.clientId) {
+    $('#slip-client').value = slip.clientId;
+    toggleNewClient();
+    if (slip.clientName) $('#new-client-name').value = slip.clientName;
+    if (slip.clientCompany !== undefined) $('#new-client-company').value = slip.clientCompany || '';
+    if (slip.clientPhone !== undefined) $('#new-client-phone').value = slip.clientPhone || '';
+    if (slip.clientAddress !== undefined) $('#new-client-address').value = slip.clientAddress || '';
+  }
+  $('#slip-notes').value = slip.notes || '';
+  
+  $('#items-container').innerHTML = '';
+  if (slip.items && slip.items.length) {
+    slip.items.forEach(it => addItemRow(it.name, it.quantity));
+  } else {
+    addItemRow('', 1);
+  }
+  
+  loadSuggestions(slip.clientId);
+  $('#slip-form-title').textContent = 'Edit Packing Slip (Updates #' + slip.slipCode + ')';
+  
+  const printBtn = $('#btn-print-slip');
+  if (printBtn) printBtn.style.display = 'inline-flex';
+  
+  showPage('new-slip');
+}
+
+function duplicateSlipByCode(slipCode) {
+  const slip = slips.find(x => x.slipCode === slipCode);
+  if (!slip) {
+    toast('Slip not found for duplicating', 'danger');
+    return;
+  }
+  
+  resetSlipForm();
+  currentSlip = null; // null slipCode ensures it saves as a brand new copy with a new sequential ID
+  
+  $('#slip-date').valueAsDate = new Date();
+  $('#slip-invoice').value = slip.invoiceNumber || '';
+  populateClientSelect();
+  if (slip.clientId) {
+    $('#slip-client').value = slip.clientId;
+    toggleNewClient();
+    if (slip.clientName) $('#new-client-name').value = slip.clientName;
+    if (slip.clientCompany !== undefined) $('#new-client-company').value = slip.clientCompany || '';
+    if (slip.clientPhone !== undefined) $('#new-client-phone').value = slip.clientPhone || '';
+    if (slip.clientAddress !== undefined) $('#new-client-address').value = slip.clientAddress || '';
+  }
+  $('#slip-notes').value = slip.notes || '';
+  
+  $('#items-container').innerHTML = '';
+  if (slip.items && slip.items.length) {
+    slip.items.forEach(it => addItemRow(it.name, it.quantity));
+  } else {
+    addItemRow('', 1);
+  }
+  
+  loadSuggestions(slip.clientId);
+  $('#slip-form-title').textContent = 'New Packing Slip (Duplicated from #' + slip.slipCode + ')';
+  
+  const printBtn = $('#btn-print-slip');
+  if (printBtn) printBtn.style.display = 'none';
+  
+  showPage('new-slip');
+}
+
+function loadSlips() {
+  const afterClients = () => {
+    google.script.run
+      .withSuccessHandler(list => {
+        slips = list || [];
+        populateFilterClient();
+        renderSlips();
+      })
+      .withFailureHandler(handleError)
+      .getPackingSlips();
+  };
+  
+  if (!clients.length) {
+    google.script.run
+      .withSuccessHandler(list => {
+        clients = list || [];
+        populateClientSelect();
+        populateFilterClient();
+        afterClients();
+      })
+      .withFailureHandler(handleError)
+      .getClients();
+  } else {
+    afterClients();
+  }
+}
+
+function populateFilterClient() {
+  const sel = $('#filter-client');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All clients</option>';
+  
+  clients.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = `${c.name} [${c.id}]`;
+    sel.appendChild(opt);
+  });
+  sel.value = current;
+}
+
+function renderSlips() {
+  const term = $('#filter-search').value.toLowerCase();
+  const clientFilter = $('#filter-client').value;
+  const from = $('#filter-from').value;
+  const to = $('#filter-to').value;
+  const tbody = $('#slips-table tbody');
+  
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  
+  // Filter active slips and revision slips
+  const activeSlips = slips.filter(s => s.slipCode.indexOf('-rev') === -1);
+  const revisionSlips = slips.filter(s => s.slipCode.indexOf('-rev') !== -1);
+  
+  let filtered = activeSlips.slice().reverse();
+  
+  if (term) {
+    filtered = filtered.filter(s => {
+      const itemNames = (s.items || []).map(it => String(it.name || '')).join(' ');
+      const searchable = [
+        s.slipCode,
+        s.clientName,
+        s.clientCompany,
+        s.clientPhone,
+        s.clientAddress,
+        s.invoiceNumber,
+        s.notes,
+        itemNames
+      ].join(' ').toLowerCase();
+      return searchable.includes(term);
+    });
+  }
+  
+  if (clientFilter) {
+    filtered = filtered.filter(s => s.clientId === clientFilter);
+  }
+  
+  if (from) {
+    filtered = filtered.filter(s => s.date >= from);
+  }
+  
+  if (to) {
+    filtered = filtered.filter(s => s.date <= to);
+  }
+  
+  const cardsContainer = $('#slips-cards-container');
+  if (cardsContainer) cardsContainer.innerHTML = '';
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">No packing slips found matching criteria.</td></tr>';
+    if (cardsContainer) {
+      cardsContainer.innerHTML = '<div class="empty">No packing slips found matching criteria.</div>';
+    }
+    return;
+  }
+  
+  filtered.forEach(s => {
+    // Check if this slip has past revisions
+    const revisions = revisionSlips.filter(r => r.slipCode.startsWith(s.slipCode + '-rev'));
+    const isEdited = revisions.length > 0;
+    const editedBadge = isEdited ? `<span class="badge badge-warning cursor-pointer" onclick="viewSlipByCode('${s.slipCode}')" style="margin-left: 6px; font-size: 0.7rem; font-weight: bold; background-color: rgba(245,158,11,0.15); color: var(--accent); padding: 2px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 2px;" title="Click to view history"><i data-lucide="history" style="width:10px;height:10px;"></i> Edited</span>` : '';
+    
+    // 1. Render desktop table row
+    const tr = document.createElement('tr');
+    tr.className = 'table-row-animate';
+    tr.innerHTML = `
+      <td>
+        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+          <span class="badge badge-accent">${escapeHtml(s.slipCode)}</span>
+          ${editedBadge}
+        </div>
+      </td>
+      <td><strong>${formatDate(s.date)}</strong></td>
+      <td>${escapeHtml(s.clientName)}</td>
+      <td>${escapeHtml(s.clientCompany || '—')}</td>
+      <td><span class="badge">${s.totalQuantity || 0}</span></td>
+      <td><span class="badge badge-secondary" title="${escapeHtml(s.createdBy || '')}">${escapeHtml(getDisplayName(s.createdBy))}</span></td>
+      <td>
+        <div class="actions-group" style="position: relative; display: flex; align-items: center; gap: 0.25rem;">
+          <button class="btn btn-secondary-soft btn-xs" onclick="viewSlipByCode('${s.slipCode}')" title="Preview Slip">
+            <i data-lucide="eye"></i> View
+          </button>
+          <div class="custom-dropdown" style="position: relative; display: inline-block;">
+            <button class="btn btn-secondary-soft btn-xs btn-icon-only dropdown-toggle" onclick="toggleRowDropdown(event, '${s.slipCode}')" title="More Actions">
+              <i data-lucide="more-horizontal" style="width: 14px; height: 14px;"></i>
+            </button>
+            <div id="dropdown-${s.slipCode}" class="dropdown-menu-content" style="display: none; position: absolute; right: 0; top: 100%; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); z-index: 50; min-width: 130px; margin-top: 4px;">
+              <button class="dropdown-item" onclick="loadSlipForEdit('${s.slipCode}')" style="width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: transparent; border: none; font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <i data-lucide="edit-3" style="width: 14px; height: 14px;"></i> Edit
+              </button>
+              <button class="dropdown-item" onclick="duplicateSlipByCode('${s.slipCode}')" style="width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: transparent; border: none; font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <i data-lucide="copy" style="width: 14px; height: 14px;"></i> Duplicate
+              </button>
+              <button class="dropdown-item" onclick="printSlipByCode('${s.slipCode}')" style="width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: transparent; border: none; font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <i data-lucide="printer" style="width: 14px; height: 14px; color: var(--accent);"></i> <span style="color: var(--accent); font-weight: 500;">PDF</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+    
+    // 2. Render mobile card
+    if (cardsContainer) {
+      const card = document.createElement('div');
+      card.className = 'slip-mobile-card animate-fade-in';
+      card.innerHTML = `
+        <div class="slip-card-header" onclick="viewSlipByCode('${s.slipCode}')">
+          <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+            <span class="badge badge-accent font-bold">${escapeHtml(s.slipCode)}</span>
+            ${editedBadge}
+          </div>
+          <span class="slip-card-date">${formatDate(s.date)}</span>
+        </div>
+        <div class="slip-card-body" onclick="viewSlipByCode('${s.slipCode}')">
+          <h4 class="slip-card-client">${escapeHtml(s.clientName)}</h4>
+          ${s.clientCompany ? `<div class="slip-card-company">${escapeHtml(s.clientCompany)}</div>` : ''}
+          <div class="slip-card-qty-badge">
+            <i data-lucide="package" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:2px;"></i>
+            Quantity: <strong>${s.totalQuantity || 0}</strong>
+          </div>
+          <div class="slip-card-creator" style="margin-top: 6px; font-size: 0.75rem; color: var(--muted);">
+            Created by <span title="${escapeHtml(s.createdBy || '')}">${escapeHtml(getDisplayName(s.createdBy))}</span>
+          </div>
+        </div>
+        <div class="slip-card-actions" style="position: relative; display: flex; justify-content: flex-end; gap: 0.5rem;">
+          <button class="btn btn-secondary-soft btn-sm" onclick="event.stopPropagation(); viewSlipByCode('${s.slipCode}')" style="flex: 1;">
+            <i data-lucide="eye"></i> View
+          </button>
+          <div class="custom-dropdown" style="position: relative; display: inline-block;">
+            <button class="btn btn-secondary-soft btn-sm btn-icon-only dropdown-toggle" onclick="event.stopPropagation(); toggleRowDropdown(event, 'mob-${s.slipCode}')" style="height: 100%;">
+              <i data-lucide="more-horizontal" style="width:16px;height:16px;"></i>
+            </button>
+            <div id="dropdown-mob-${s.slipCode}" class="dropdown-menu-content" style="display: none; position: absolute; right: 0; bottom: 100%; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); z-index: 50; min-width: 140px; margin-bottom: 4px;">
+              <button class="dropdown-item" onclick="event.stopPropagation(); loadSlipForEdit('${s.slipCode}')" style="width: 100%; text-align: left; padding: 0.75rem 1rem; background: transparent; border: none; font-size: 0.9rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <i data-lucide="edit-3" style="width: 16px; height: 16px;"></i> Edit
+              </button>
+              <button class="dropdown-item" onclick="event.stopPropagation(); duplicateSlipByCode('${s.slipCode}')" style="width: 100%; text-align: left; padding: 0.75rem 1rem; background: transparent; border: none; font-size: 0.9rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <i data-lucide="copy" style="width: 16px; height: 16px;"></i> Duplicate
+              </button>
+              <button class="dropdown-item" onclick="event.stopPropagation(); printSlipByCode('${s.slipCode}')" style="width: 100%; text-align: left; padding: 0.75rem 1rem; background: transparent; border: none; font-size: 0.9rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <i data-lucide="printer" style="width: 16px; height: 16px; color: var(--accent);"></i> <span style="color: var(--accent); font-weight: 500;">PDF</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      cardsContainer.appendChild(card);
+    }
+  });
+  
+  if (window.lucide) lucide.createIcons();
+}
+
+function viewSlipByCode(slipCode) {
+  // Find the exact slip (could be active or a revision)
+  const s = slips.find(x => x.slipCode === slipCode);
+  if (!s) return;
+  
+  // Find root code and associated slips
+  const rootCode = slipCode.split('-rev')[0];
+  const activeSlip = slips.find(x => x.slipCode === rootCode);
+  const revisionSlips = slips.filter(x => x.slipCode.indexOf('-rev') !== -1);
+  const revisions = revisionSlips.filter(r => r.slipCode.startsWith(rootCode + '-rev'));
+  
+  const getTimestamp = r => Number(r.slipCode.split('-rev')[1] || 0);
+  revisions.sort((a, b) => getTimestamp(b) - getTimestamp(a));
+  
+  const isRevision = slipCode.indexOf('-rev') !== -1;
+  
+  $('#modal-title').textContent = isRevision ? 'Packing Slip Revision Detail' : 'Packing Slip Detail';
+  const body = $('#modal-body');
+  
+  let html = '';
+  
+  // Warning Banner for Archived Versions
+  if (isRevision) {
+    const revTime = getTimestamp(s);
+    html += `
+      <div class="alert alert-warning animate-fade-in" style="margin-bottom: 1.25rem; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.85rem; padding: 0.75rem 1rem; border-radius: 6px; background-color: rgba(245,158,11,0.12); color: var(--accent); border: 1px solid rgba(245,158,11,0.2);">
+        <i data-lucide="alert-triangle" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
+        <span>Viewing Archived Version (Replaced on ${formatDateTime(revTime)})</span>
+      </div>
+    `;
+  }
+  
+  html += `
+    <div class="preview-slip-document animate-scale-in">
+      <!-- Document Header -->
+      <div class="preview-header" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem;">
+        <div class="preview-company" style="display: flex; align-items: flex-start; gap: 1rem;">
+          ${settings.LogoBase64 ? `
+            <img src="${settings.LogoBase64}" class="preview-logo" alt="Logo">
+          ` : ''}
+          <div class="preview-company-details">
+            <h4 class="preview-company-name">${escapeHtml(settings.CompanyName || 'Kodus Home')}</h4>
+            <p class="preview-text-muted text-pre-line">${escapeHtml(settings.Address || '')}</p>
+            <p class="preview-text-muted">${settings.Phone ? 'Phone: ' + escapeHtml(settings.Phone) : ''}</p>
+          </div>
+        </div>
+        <div class="preview-slip-meta">
+          <h2 class="preview-title">${isRevision ? 'ARCHIVED SLIP' : 'PACKING SLIP'}</h2>
+          <div class="preview-meta-row">
+            <span class="meta-label">Slip Code:</span>
+            <span class="meta-value bold-badge">${escapeHtml(rootCode)}</span>
+          </div>
+          <div class="preview-meta-row">
+            <span class="meta-label">Date:</span>
+            <span class="meta-value">${formatDate(s.date)}</span>
+          </div>
+          ${s.invoiceNumber ? `
+          <div class="preview-meta-row">
+            <span class="meta-label">Invoice #:</span>
+            <span class="meta-value">${escapeHtml(s.invoiceNumber)}</span>
+          </div>
+          ` : ''}
+          <div class="preview-meta-row">
+            <span class="meta-label">Created By:</span>
+            <span class="meta-value" title="${escapeHtml(s.createdBy || '')}">${escapeHtml(getDisplayName(s.createdBy))}</span>
+          </div>
+          ${s.editedBy && s.editedBy !== s.createdBy ? `
+          <div class="preview-meta-row">
+            <span class="meta-label">Edited By:</span>
+            <span class="meta-value" title="${escapeHtml(s.editedBy)}">${escapeHtml(getDisplayName(s.editedBy))}</span>
+          </div>
+          ` : ''}
+        </div>
+      </div>
+      
+      <!-- Divider -->
+      <hr class="preview-divider">
+      
+      <!-- Shipping Details -->
+      <div class="preview-shipping">
+        <h5 class="preview-section-title">Deliver To:</h5>
+        <div class="shipping-card">
+          <h4 class="client-title">${escapeHtml(s.clientName)}</h4>
+          ${s.clientCompany ? `<p class="client-company">${escapeHtml(s.clientCompany)}</p>` : ''}
+          <p class="client-address text-pre-line">${escapeHtml(s.clientAddress || '')}</p>
+          ${s.clientPhone ? `<p class="client-phone"><i data-lucide="phone" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> ${escapeHtml(s.clientPhone)}</p>` : ''}
+        </div>
+      </div>
+      
+      <!-- Items Table -->
+      <div class="preview-items">
+        <h5 class="preview-section-title">Package Contents:</h5>
+        <table class="preview-table">
+          <thead>
+            <tr>
+              <th>Item Description</th>
+              <th class="text-center" style="width: 100px;">Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+  `;
+  
+  (s.items || []).forEach(it => {
+    html += `
+      <tr>
+        <td>${escapeHtml(it.name)}</td>
+        <td class="text-center font-semibold">${it.quantity}</td>
+      </tr>
+    `;
+  });
+  
+  html += `
+          </tbody>
+          <tfoot>
+            <tr>
+              <td class="text-right font-semibold">Total Quantity:</td>
+              <td class="text-center font-bold font-large">${s.totalQuantity || s.items.reduce((a, b) => a + (parseInt(b.quantity, 10) || 0), 0)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      
+      <!-- Notes Section -->
+      ${s.notes ? `
+        <div class="preview-notes">
+          <h5 class="preview-section-title">Notes / Instructions:</h5>
+          <div class="notes-card text-pre-line">${escapeHtml(s.notes)}</div>
+        </div>
+      ` : ''}
+      
+      <!-- Footer -->
+      <div class="preview-footer">
+        <p>Thank you for choosing ${escapeHtml(settings.CompanyName || 'Kodus Home')}!</p>
+      </div>
+    </div>
+  `;
+  
+  // Revision History Navigator Panel (Inside modal body)
+  if (activeSlip && (revisions.length > 0)) {
+    html += `
+      <div class="revision-timeline">
+        <h3 class="revision-timeline-title">
+          <i data-lucide="history"></i> Revision History
+        </h3>
+        <div class="revision-list">
+          
+          <!-- Current Active Version Row -->
+          <div class="revision-row ${!isRevision ? 'active' : ''}">
+            <div class="revision-info">
+              <span class="revision-dot"></span>
+              <span class="revision-text"><strong>Current Active Version</strong> (${activeSlip.totalQuantity} items)</span>
+            </div>
+            ${isRevision ? `
+              <button class="btn btn-secondary-soft btn-xs" onclick="viewSlipByCode('${activeSlip.slipCode}')" style="padding: 2px 8px; font-size: 0.75rem;">
+                <i data-lucide="eye" style="width:12px;height:12px;"></i> View Current
+              </button>
+            ` : '<span style="color: var(--accent); font-weight: 600; font-size: 0.75rem;">Viewing Active</span>'}
+          </div>
+          
+          <!-- Past Revisions Rows -->
+          ${revisions.map((rev, index) => {
+            const revTime = getTimestamp(rev);
+            const isViewingThis = slipCode === rev.slipCode;
+            return `
+              <div class="revision-row ${isViewingThis ? 'active' : ''}">
+                <div class="revision-info">
+                  <span class="revision-dot"></span>
+                  <span class="revision-text"><strong>Archived Version ${revisions.length - index}</strong> (${rev.totalQuantity} items) - ${formatDateTime(revTime)}</span>
+                </div>
+                ${!isViewingThis ? `
+                  <button class="btn btn-secondary-soft btn-xs" onclick="viewSlipByCode('${rev.slipCode}')" style="padding: 2px 8px; font-size: 0.75rem;">
+                    <i data-lucide="eye" style="width:12px;height:12px;"></i> View
+                  </button>
+                ` : '<span style="color: var(--accent); font-weight: 600; font-size: 0.75rem;">Viewing</span>'}
+              </div>
+            `;
+          }).join('')}
+          
+        </div>
+      </div>
+    `;
+  }
+  
+  html += `
+    <!-- Action controls outside document -->
+    <div class="modal-actions-bar">
+      <button class="btn btn-accent btn-md btn-full" onclick="printSlipByCode('${s.slipCode}')">
+        <i data-lucide="download"></i> Download ${isRevision ? 'Archived' : 'Official'} PDF
+      </button>
+      <button class="btn btn-secondary btn-md" onclick="closeModal()">
+        Close
+      </button>
+    </div>
+  `;
+  
+  body.innerHTML = html;
+  $('#modal').classList.add('active');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeModal() {
+  $('#modal').classList.remove('active');
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    const parts = d.split('-');
+    return parts[2] + '/' + parts[1] + '/' + parts[0];
+  }
+  const date = new Date(d);
+  if (isNaN(date)) return d;
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function formatDateTime(d) {
+  if (!d) return '';
+  const date = typeof d === 'number' ? new Date(d) : new Date(d);
+  if (isNaN(date.getTime())) return String(d);
+  
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  }) + ' ' + date.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function getDisplayName(email) {
+  if (!email) return 'Unknown';
+  const username = email.split('@')[0].toLowerCase();
+  const parts = username.split(/[\._-]/);
+  if (parts.length > 0 && parts[0]) {
+    const name = parts[0];
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+  return 'Unknown';
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return text
+    .toString()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Toggle custom actions dropdowns
+function toggleRowDropdown(event, code) {
+  event.stopPropagation();
+  const dropdown = document.getElementById('dropdown-' + code);
+  if (!dropdown) return;
+  
+  // Close all other open dropdowns first
+  const allDropdowns = document.querySelectorAll('.dropdown-menu-content');
+  allDropdowns.forEach(d => {
+    if (d.id !== 'dropdown-' + code) {
+      d.style.display = 'none';
+    }
+  });
+  
+  // Toggle the clicked dropdown
+  if (dropdown.style.display === 'block') {
+    dropdown.style.display = 'none';
+  } else {
+    dropdown.style.display = 'block';
+  }
+}
+
+// Close dropdowns when clicking anywhere outside
+document.addEventListener('click', function(event) {
+  if (!event.target.closest('.custom-dropdown')) {
+    const allDropdowns = document.querySelectorAll('.dropdown-menu-content');
+    allDropdowns.forEach(d => {
+      d.style.display = 'none';
+    });
+  }
+});
+</script>

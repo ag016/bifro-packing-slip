@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kodus Home - Packing Slips</title>
+  <meta name="description" content="Create, print, and track professional packing slips for Kodus Home deliveries.">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="manifest" href="<?= ScriptApp.getService().getUrl() ?>?manifest=true">
+  <!-- Force zero margin/padding on html+body immediately before anything else renders -->
+  <style>
+    html { margin: 0 !important; padding: 0 !important; background-color: #0f172a !important; }
+    body { margin: 0 !important; padding: 0 !important; }
+  </style>
+  
+  <!-- Inject verified script access context -->
+  <script>
+    window.SERVER_ACCESS = <?!= JSON.stringify(access) ?>;
+  </script>
+  
+  <!-- PDF Library CDNs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://unpkg.com/jspdf-autotable@3.5.31/dist/jspdf.plugin.autotable.min.js"></script>
+  
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- Include Stylesheet -->
+  <?!= include('Styles'); ?>
+</head>
+<body>
+
+  <!-- Access Control Security Gate -->
+  <div id="access-gate" class="access-gate" style="display:none;">
+    <div class="access-card" id="access-card">
+      <div id="access-brand-header" style="display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem;">
+        <img id="access-logo" style="display: none; max-height: 50px; border-radius: 6px; padding: 2px; background: white; border: 1px solid var(--border); margin-bottom: 0.25rem;">
+        <h1 id="access-brand-name">Packing Slip Admin</h1>
+        <p class="muted">Administration Panel</p>
+      </div>
+
+      <!-- Connection state -->
+      <div id="access-check">
+        <div id="access-message" class="access-message"></div>
+        <button class="btn btn-primary btn-md btn-full" onclick="checkAccess()">Open Application</button>
+        <p class="text-muted" style="margin-top:1.25rem;font-size:0.8rem;">Requires authentication with a Google account shared on the master spreadsheet.</p>
+      </div>
+
+      <!-- Unauthorized / error state -->
+      <div id="access-denied" class="access-denied" style="display:none;">
+        <div class="denied-icon">
+          <i data-lucide="lock" style="width:48px;height:48px;margin:0 auto;"></i>
+        </div>
+        <h2>Access Restricted</h2>
+        <span class="denied-email" id="denied-email"></span>
+        <p class="denied-text">does not have access permissions.</p>
+        <div id="denied-message" class="access-message"></div>
+        <p class="denied-help">Please contact the spreadsheet owner to request viewing/editing access.</p>
+        <button id="reauth-button" class="btn btn-primary btn-md btn-full" onclick="checkAccess()">Re-authenticate / Try Again</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Primary Application Frame -->
+  <div id="app-shell" style="display:none;">
+    
+    <!-- Sidebar Navigation (Shown on Desktop) -->
+    <aside class="sidebar">
+      <div class="sidebar-brand" style="display: flex; align-items: center; gap: 0.75rem;">
+        <img id="sidebar-logo" style="display: none; height: 32px; border-radius: 6px; background: white; padding: 2px;">
+        <span id="sidebar-brand-name">Packing Slip Admin</span>
+      </div>
+      <nav class="sidebar-menu">
+        <button id="sidebar-btn-home" class="sidebar-link active" onclick="showPage('home')">
+          <i data-lucide="home"></i> Home
+        </button>
+        <button id="sidebar-btn-clients" class="sidebar-link" onclick="showPage('clients')">
+          <i data-lucide="users"></i> Clients
+        </button>
+        <button id="sidebar-btn-new-slip" class="sidebar-link" onclick="showPage('new-slip')">
+          <i data-lucide="plus-circle"></i> New Packing Slip
+        </button>
+        <button id="sidebar-btn-slips" class="sidebar-link" onclick="showPage('slips')">
+          <i data-lucide="package"></i> Packing Slips
+        </button>
+        <button id="sidebar-btn-settings" class="sidebar-link" onclick="showPage('settings')">
+          <i data-lucide="settings"></i> Settings
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-profile">
+          <div class="user-avatar">
+            <i data-lucide="user" style="width:16px;height:16px;"></i>
+          </div>
+          <div class="user-info">
+            <span class="user-email-text" id="user-email">Active User</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Container Wrapper -->
+    <div class="content-wrapper">
+      
+      <!-- Sticky Header (Visible on Mobile Only) -->
+      <header class="mobile-header">
+        <div class="mobile-brand" onclick="showPage('home')" style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;" title="Go to Dashboard">
+          <img id="mobile-logo" style="display: none; height: 26px; border-radius: 4px; background: white; padding: 2px;">
+          <span id="mobile-brand-name">Packing Slips</span>
+        </div>
+        <div class="mobile-header-right">
+          <div class="mobile-user-profile" onclick="showPage('settings')" title="Go to Settings">
+            <span class="mobile-user-email" id="mobile-user-email">Active User</span>
+            <div class="mobile-user-avatar">
+              <i data-lucide="user" style="width:12px;height:12px;"></i>
+            </div>
+          </div>
+          <button class="mobile-menu-btn" onclick="toggleMobileMenu()" id="btn-mobile-menu" title="Menu">
+            <i data-lucide="menu" style="width:18px;height:18px;"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- Mobile Dropdown Menu (Hidden by default) -->
+      <div id="mobile-dropdown-menu" class="mobile-dropdown-menu animate-fade-in" style="display: none;">
+        <button class="mobile-menu-item active" onclick="navigateMobile('home')">
+          <i data-lucide="home"></i> Home
+        </button>
+        <button class="mobile-menu-item" onclick="navigateMobile('clients')">
+          <i data-lucide="users"></i> Clients
+        </button>
+        <button class="mobile-menu-item" onclick="navigateMobile('new-slip')">
+          <i data-lucide="plus-circle"></i> New Packing Slip
+        </button>
+        <button class="mobile-menu-item" onclick="navigateMobile('slips')">
+          <i data-lucide="package"></i> Packing Slips
+        </button>
+        <button class="mobile-menu-item" onclick="navigateMobile('settings')">
+          <i data-lucide="settings"></i> Settings
+        </button>
+      </div>
+
+      <!-- Main Display Panel -->
+      <main class="animate-fade-in">
+        
+        <!-- Tab Page: Dashboard Home -->
+        <section id="home" class="page active">
+          <div class="hero">
+            <div class="hero-content">
+              <h1><span id="dynamic-greeting">Welcome,</span> <span id="user-display-name">Admin</span></h1>
+              <p>Create, print, and track professional packing slips for your client deliveries in seconds.</p>
+              <button class="btn btn-accent btn-md" onclick="startNewSlip()">
+                <i data-lucide="plus-circle"></i> Create New Slip
+              </button>
+            </div>
+          </div>
+          
+          <!-- Quantitative statistics -->
+          <div class="stats">
+            <div class="stat-card">
+              <div class="number" id="stat-clients"><span class="spinner-small"></span></div>
+              <div class="label">Total Clients</div>
+            </div>
+            <div class="stat-card">
+              <div class="number" id="stat-slips"><span class="spinner-small"></span></div>
+              <div class="label">Total Slips</div>
+            </div>
+            <div class="stat-card">
+              <div class="number" id="stat-today"><span class="spinner-small"></span></div>
+              <div class="label">Slips Today</div>
+            </div>
+            <div class="stat-card">
+              <div class="number" id="stat-qty"><span class="spinner-small"></span></div>
+              <div class="label">Items Shipped</div>
+            </div>
+          </div>
+
+          <!-- Shortcuts panel -->
+          <div class="quick-actions">
+            <div class="quick-card" onclick="showPage('clients')">
+              <div class="quick-card-icon"><i data-lucide="users"></i></div>
+              <div class="quick-card-info">
+                <span class="quick-card-title">Manage Clients</span>
+                <span class="quick-card-desc">Add client accounts and addresses</span>
+              </div>
+            </div>
+            <div class="quick-card" onclick="showPage('slips')">
+              <div class="quick-card-icon"><i data-lucide="package"></i></div>
+              <div class="quick-card-info">
+                <span class="quick-card-title">Delivery List</span>
+                <span class="quick-card-desc">Browse history and download PDFs</span>
+              </div>
+            </div>
+            <div class="quick-card" onclick="showPage('settings')">
+              <div class="quick-card-icon"><i data-lucide="settings"></i></div>
+              <div class="quick-card-info">
+                <span class="quick-card-title">System Settings</span>
+                <span class="quick-card-desc">Configure company branding metadata</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent activity grid -->
+          <div class="card" style="overflow: hidden;">
+            <h2><i data-lucide="clock" style="color:var(--accent);"></i> Recent Packing Slips</h2>
+            <div class="table-responsive">
+              <table id="recent-slips-table">
+                <thead>
+                  <tr>
+                    <th>Slip Code</th>
+                    <th>Date</th>
+                    <th>Client Name</th>
+                    <th>Total Qty</th>
+                    <th>Created By</th>
+                    <th>Action Controls</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="6" class="empty">Loading recent items...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tab Page: Settings -->
+        <section id="settings" class="page">
+          <div class="card">
+            <h2><i data-lucide="sliders" style="color:var(--accent);"></i> Company Configuration</h2>
+            <p class="subtitle">This default branding metadata will be printed at the top-left corner of all generated PDF packing slips.</p>
+            
+            <div class="grid-2">
+              <div class="field-group">
+                <label for="company-name">Company Name *</label>
+                <input id="company-name" type="text" placeholder="My Company" required>
+              </div>
+              <div class="field-group">
+                <label for="company-phone">Customer Phone Number</label>
+                <input id="company-phone" type="text" placeholder="(555) 123-4567">
+              </div>
+            </div>
+            
+            <div class="field-group">
+              <label for="company-address">Billing/Shipping Address</label>
+              <textarea id="company-address" placeholder="123 Main St, Suite 400&#10;City, State, Zip"></textarea>
+            </div>
+
+            <div class="field-group" style="margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1.25rem;">
+              <label>Company Brand Logo (PNG or JPG)</label>
+              <p class="subtitle" style="margin-bottom: 0.75rem;">Upload your logo. It will be automatically resized and compressed, then displayed in the sidebar, mobile header, and printed PDFs.</p>
+              <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                <input type="file" id="logo-file-input" accept="image/*" onchange="handleLogoSelect(event)" style="display: none;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="$('#logo-file-input').click()" style="display: flex; align-items: center; gap: 0.35rem;">
+                  <i data-lucide="upload" style="width: 14px; height: 14px;"></i> Choose Image File
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-clear-logo" onclick="clearLogoUpload()" style="display: none; color: var(--danger); border-color: rgba(239, 68, 68, 0.2);">
+                  <i data-lucide="trash-2" style="width: 14px; height: 14px; color: var(--danger);"></i> Remove Logo
+                </button>
+                <img id="settings-logo-preview" style="max-height: 50px; border-radius: var(--radius-sm); border: 1px solid var(--border); padding: 4px; background: white; display: none; margin-left: 0.5rem;">
+              </div>
+            </div>
+            
+            <div class="actions">
+              <button class="btn btn-primary btn-md" onclick="saveSettings()">
+                <i data-lucide="save"></i> Save Settings
+              </button>
+              <button type="button" class="btn btn-secondary btn-md" onclick="openInstallPrompt()">
+                <i data-lucide="download"></i> Install App
+              </button>
+            </div>
+          </div>
+
+          <!-- Tab Card: User Access & Accounts (Admin Only) -->
+          <div class="card" id="user-management-card" style="margin-top: 1.5rem; display: none;">
+            <h2><i data-lucide="users" style="color:var(--accent);"></i> User Access & Accounts</h2>
+            <p class="subtitle">Add, edit, or remove users. Programmatic sharing coordinates spreadsheet and script permissions instantly.</p>
+            
+            <!-- User addition/editing form -->
+            <form id="user-form" onsubmit="event.preventDefault(); saveUserSubmit();" style="margin-bottom: 2rem; background: var(--bg); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+              <h3 id="user-form-title" style="margin-top: 0; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="user-plus" style="width:18px;height:18px;"></i> Add New User</h3>
+              <input type="hidden" id="user-edit-id" value="">
+              
+              <div class="grid-3">
+                <div class="field-group">
+                  <label for="user-input-name">Full Name *</label>
+                  <input id="user-input-name" type="text" placeholder="John Doe" required>
+                </div>
+                <div class="field-group">
+                  <label for="user-input-email">Gmail Address *</label>
+                  <input id="user-input-email" type="email" placeholder="john.doe@gmail.com" required>
+                </div>
+                <div class="field-group">
+                  <label for="user-input-role">Role *</label>
+                  <select id="user-input-role" required>
+                    <option value="User">User / Editor</option>
+                    <option value="Admin">Admin</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div style="display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end;">
+                <button type="button" id="user-form-cancel" class="btn btn-secondary btn-sm" onclick="cancelUserEdit()" style="display: none;">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm"><i data-lucide="save" style="width:14px;height:14px;"></i> Save Account</button>
+              </div>
+            </form>
+
+            <!-- User list table -->
+            <div id="users-table-container" style="overflow-x: auto;">
+              <table class="data-table" style="width: 100%; border-collapse: collapse;">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Registered</th>
+                    <th style="text-align: right;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="users-table-body">
+                  <tr>
+                    <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading users...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tab Page: Clients -->
+        <section id="clients" class="page">
+          <div class="card">
+            <h2><i data-lucide="user-plus" style="color:var(--accent);"></i> Register New Client</h2>
+            <form id="client-form" onsubmit="event.preventDefault(); saveClient();">
+              <div class="grid-3">
+                <div class="field-group">
+                  <label for="client-name">Client Contact Name *</label>
+                  <input id="client-name" type="text" placeholder="e.g. John Doe" required>
+                </div>
+                <div class="field-group">
+                  <label for="client-company">Company Name</label>
+                  <input id="client-company" type="text" placeholder="e.g. Acme Corp">
+                </div>
+                <div class="field-group">
+                  <label for="client-phone">Client Phone Number</label>
+                  <input id="client-phone" type="text" placeholder="e.g. (555) 987-6543">
+                </div>
+              </div>
+              <div class="field-group">
+                <label for="client-address">Delivery Address</label>
+                <textarea id="client-address" placeholder="Specify full street address for delivery shipments..."></textarea>
+              </div>
+              <div class="actions" id="client-form-actions">
+                <button type="submit" class="btn btn-primary btn-md" id="btn-save-client">
+                  <i data-lucide="plus-circle"></i> Save Client Details
+                </button>
+                <button type="button" class="btn btn-secondary btn-md" id="btn-cancel-client-edit" style="display:none;" onclick="cancelClientEdit()">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+          
+          <div class="card">
+            <h2><i data-lucide="book-open" style="color:var(--accent);"></i> Client Directory</h2>
+            <div class="table-responsive">
+              <table id="clients-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Client Name</th>
+                    <th>Company</th>
+                    <th>Phone</th>
+                    <th>Address</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="6" class="empty">Loading clients directory...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tab Page: New Packing Slip -->
+        <section id="new-slip" class="page">
+          <div class="card">
+            <h2 id="slip-form-title"><i data-lucide="file-plus" style="color:var(--accent);"></i> Create New Packing Slip</h2>
+            <form id="slip-form" onsubmit="event.preventDefault(); savePackingSlip();">
+              
+              <div class="grid-2">
+                <div class="field-group">
+                  <label for="slip-date">Invoice / Shipment Date</label>
+                  <input id="slip-date" type="date" required>
+                </div>
+                <div class="field-group">
+                  <label for="slip-invoice">Invoice Number <span class="text-muted" style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+                  <input id="slip-invoice" type="text" placeholder="e.g. INV-00123">
+                </div>
+              </div>
+
+              <div class="field-group">
+                <label for="slip-client">Select Client *</label>
+                <select id="slip-client" required onchange="toggleNewClient()">
+                  <option value="new">+ Add new client</option>
+                </select>
+              </div>
+
+              <!-- Nested Inline Form for creating a new client on the fly -->
+              <div id="new-client-fields" class="card-sm-inset animate-fade-in" style="display:none;">
+                <h3 style="margin-top:0.25rem;"><i data-lucide="user-check" style="width:18px;height:18px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Client Shipment Details</h3>
+                <div class="grid-3">
+                  <div class="field-group">
+                    <label for="new-client-name" class="label-inline">Client Name *</label>
+                    <input id="new-client-name" type="text" placeholder="John Doe">
+                  </div>
+                  <div class="field-group">
+                    <label for="new-client-company" class="label-inline">Company Name</label>
+                    <input id="new-client-company" type="text" placeholder="Acme Corp">
+                  </div>
+                  <div class="field-group">
+                    <label for="new-client-phone" class="label-inline">Phone Number</label>
+                    <input id="new-client-phone" type="text" placeholder="(555) 123-4567">
+                  </div>
+                </div>
+                <div class="field-group" style="margin-top: 0.85rem;">
+                  <label for="new-client-address" class="label-inline">Shipment Address</label>
+                  <textarea id="new-client-address" placeholder="Address street, city, state, zip..."></textarea>
+                </div>
+              </div>
+
+              <h2 style="margin: 2rem 0 1rem;"><i data-lucide="list" style="color:var(--accent);"></i> Package Contents</h2>
+              
+              <!-- Suggestions list container -->
+              <div id="suggestions-box" class="animate-fade-in" style="display:none;">
+                <datalist id="suggestions-list"></datalist>
+              </div>
+              
+              <!-- Dynamic item rows container -->
+              <div id="items-container"></div>
+              
+              <div style="margin: 1.25rem 0 2rem;">
+                <button type="button" class="btn btn-secondary-soft" onclick="addItemRow('', 1)">
+                  <i data-lucide="plus"></i> Add Item Row
+                </button>
+              </div>
+
+              <div class="field-group">
+                <label for="slip-notes">Shipment Notes / Delivery Comments</label>
+                <textarea id="slip-notes" placeholder="Optional notes to print on packing slip (e.g. Gate code, deliver to dock 2)..."></textarea>
+              </div>
+
+              <div class="actions">
+                <button type="submit" class="btn btn-primary btn-md" id="btn-save-slip">
+                  <i data-lucide="save"></i> Save Packing Slip
+                </button>
+                <button type="button" class="btn btn-secondary btn-md" onclick="resetSlipForm()">
+                  <i data-lucide="rotate-ccw"></i> Reset Form
+                </button>
+                <button type="button" class="btn btn-accent btn-md" id="btn-print-slip" style="display:none;" onclick="printCurrentSlip()">
+                  <i data-lucide="printer"></i> Download Official PDF
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- Tab Page: Packing Slips list and history -->
+        <section id="slips" class="page">
+          <div class="card">
+            <h2><i data-lucide="archive" style="color:var(--accent);"></i> Historical Packing Slips</h2>
+            
+            <!-- Filters dashboard -->
+            <div class="filters">
+              <div class="field-group">
+                <label for="filter-search">Search Text</label>
+                <input id="filter-search" type="text" placeholder="Search by name, code, company...">
+              </div>
+              <div class="field-group">
+                <label for="filter-client">Filter by Client</label>
+                <select id="filter-client">
+                  <option value="">All clients</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="filter-from">From Date</label>
+                <input id="filter-from" type="date">
+              </div>
+              <div class="field-group">
+                <label for="filter-to">To Date</label>
+                <input id="filter-to" type="date">
+              </div>
+            </div>
+            
+            <div class="table-responsive" id="slips-table-container">
+              <table id="slips-table">
+                <thead>
+                  <tr>
+                    <th>Slip Code</th>
+                    <th>Date</th>
+                    <th>Client Name</th>
+                    <th>Company</th>
+                    <th>Total Qty</th>
+                    <th>Created By</th>
+                    <th>Action Controls</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="7" class="empty">Loading slip records...</td></tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <div id="slips-cards-container" class="mobile-cards-grid">
+              <div class="empty">Loading slip records...</div>
+            </div>
+          </div>
+        </section>
+      </main>
+      
+      <!-- Mobile Bottom Navigation (Hidden on Desktop) -->
+      <nav>
+        <button id="btn-home" class="active" onclick="showPage('home')">
+          <i data-lucide="home"></i><span>Home</span>
+        </button>
+        <button id="btn-clients" onclick="showPage('clients')">
+          <i data-lucide="users"></i><span>Clients</span>
+        </button>
+        <button id="btn-new-slip" onclick="showPage('new-slip')">
+          <i data-lucide="plus-circle"></i><span>New Slip</span>
+        </button>
+        <button id="btn-slips" onclick="showPage('slips')">
+          <i data-lucide="package"></i><span>Slips</span>
+        </button>
+        <button id="btn-settings" onclick="showPage('settings')">
+          <i data-lucide="settings"></i><span>Settings</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Modal Viewport Overlay (Glassmorphism popup) -->
+    <div id="modal" class="modal" onclick="if(event.target===this) closeModal()">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modal-title">Packing Slip Detail</h3>
+          <button class="modal-close-btn" onclick="closeModal()">&times;</button>
+        </div>
+        <div id="modal-body">
+          <!-- Dynamically populated in-app visual document preview goes here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification Popup Alert -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Install App Prompt -->
+    <div id="install-prompt" class="install-prompt">
+      <span class="install-prompt-text" id="install-prompt-message">Add application to your home screen?</span>
+      <div class="install-prompt-actions">
+        <button class="install-btn" id="install-btn">Install</button>
+        <button class="install-dismiss" id="install-dismiss">Not now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Include Modular Script Components -->
+  <?!= include('Scripts'); ?>
+  <?!= include('ClientController'); ?>
+  <?!= include('SlipController'); ?>
+  <?!= include('PdfGenerator'); ?>
+
+  <!-- Inline Date Defaulting -->
+  <script>
+    document.getElementById('slip-date').valueAsDate = new Date();
+  </script>
+</body>
+</html>

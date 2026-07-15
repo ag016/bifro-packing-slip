@@ -1,0 +1,16 @@
+{
+  "name": "packing-slip-software",
+  "version": "1.0.0",
+  "description": "A modern, responsive, and robust web application for creating packing slips and delivery notes. All data is saved to a Google Sheet, and slips can be downloaded as professional PDF documents.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@google/clasp": "^3.3.0"
+  }
+}

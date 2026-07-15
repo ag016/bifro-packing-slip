@@ -1,0 +1,836 @@
+<script>
+/**
+ * Kodus Home - Core Application Script
+ * Application shell, access control, state management, and utility helpers
+ */
+
+// Utility Selectors
+const $ = sel => document.querySelector(sel);
+const $$ = sel => document.querySelectorAll(sel);
+
+// Global State
+let settings = {};
+let clients = [];
+let slips = [];
+let suggestions = [];
+let currentSlip = null;
+
+// Routing and Navigation
+function showPage(pageId) {
+  // Hide all sections and remove active class from nav buttons
+  $$('.page').forEach(p => {
+    p.classList.remove('active');
+    p.style.display = 'none';
+  });
+  $$('nav button, .sidebar-link, .mobile-menu-item').forEach(b => b.classList.remove('active'));
+  
+  // Show target page
+  const targetPage = $('#' + pageId);
+  if (targetPage) {
+    targetPage.classList.add('active');
+    targetPage.style.display = 'block';
+  }
+  
+  // Highlight active buttons (both top header, sidebar, and mobile dropdown)
+  $$(`#btn-${pageId}, #sidebar-btn-${pageId}`).forEach(b => b.classList.add('active'));
+  const activeMobileItem = document.querySelector(`.mobile-menu-item[onclick*="${pageId}"]`);
+  if (activeMobileItem) activeMobileItem.classList.add('active');
+  
+  // Auto-close mobile dropdown if open
+  const menu = $('#mobile-dropdown-menu');
+  if (menu) menu.style.display = 'none';
+  const btn = $('#btn-mobile-menu i');
+  if (btn) {
+    btn.setAttribute('data-lucide', 'menu');
+  }
+  
+  // Context-specific actions
+  if (pageId === 'home') {
+    setDynamicGreeting();
+    loadHome();
+  } else if (pageId === 'clients') {
+    loadClients();
+  } else if (pageId === 'slips') {
+    loadSlips();
+  }
+  
+  // Update Lucide Icons for any newly shown content
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+}
+
+function toggleMobileMenu() {
+  const menu = $('#mobile-dropdown-menu');
+  if (!menu) return;
+  const isHidden = menu.style.display === 'none';
+  menu.style.display = isHidden ? 'flex' : 'none';
+  
+  const btn = $('#btn-mobile-menu i');
+  if (btn) {
+    btn.setAttribute('data-lucide', isHidden ? 'x' : 'menu');
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+function navigateMobile(pageId) {
+  showPage(pageId);
+  toggleMobileMenu();
+}
+
+// Dynamic greeting based on time of day
+function setDynamicGreeting() {
+  const greetingEl = $('#dynamic-greeting');
+  if (!greetingEl) return;
+  
+  const hour = new Date().getHours();
+  let text = 'Welcome back,';
+  
+  if (hour < 12) {
+    text = 'Good morning,';
+  } else if (hour < 17) {
+    text = 'Good afternoon,';
+  } else {
+    text = 'Good evening,';
+  }
+  
+  greetingEl.textContent = text;
+}
+
+// Toast alerts (success, info, warning, danger)
+function toast(msg, type = 'success') {
+  const t = $('#toast');
+  if (!t) return;
+  
+  t.textContent = msg;
+  t.className = `toast toast-${type} show`;
+  t.style.display = 'flex';
+  
+  // Add icon depending on toast type
+  let iconName = 'check-circle';
+  if (type === 'danger') iconName = 'alert-triangle';
+  if (type === 'warning') iconName = 'alert-circle';
+  if (type === 'info') iconName = 'info';
+  
+  t.innerHTML = `<i data-lucide="${iconName}" style="width:18px;height:18px;margin-right:8px;flex-shrink:0;"></i><span>${msg}</span>`;
+  if (window.lucide) lucide.createIcons();
+  
+  setTimeout(() => {
+    t.classList.remove('show');
+    t.classList.add('hide');
+    setTimeout(() => {
+      t.style.display = 'none';
+      t.classList.remove('hide');
+    }, 300);
+  }, 4000);
+}
+
+// Centralized error handler
+function handleError(err) {
+  console.error('App Error:', err);
+  const errMsg = err && err.message ? err.message : String(err);
+  toast('Error: ' + errMsg, 'danger');
+}
+
+// Access Control Gateway
+function checkAccess() {
+  const gate = $('#access-gate');
+  const card = $('#access-card');
+  
+  if (gate) gate.style.display = 'flex';
+  $('#access-check').style.display = 'block';
+  $('#access-denied').style.display = 'none';
+  $('#access-message').innerHTML = '<span class="spinner-large"></span><p style="margin-top:1rem;">Verifying Google Drive authorization...</p>';
+  
+  google.script.run
+    .withSuccessHandler(res => {
+      if (res.access) {
+        if (gate) gate.style.display = 'none';
+        $('#app-shell').style.display = 'flex';
+        window.SERVER_ACCESS = res; // Update global access object
+        if (res.email) setUserEmail(res.email, res.name);
+        initApp();
+      } else {
+        populateAccessGateBranding(res);
+        showAccessDenied(res.email, res.message, res.authUrl);
+      }
+    })
+    .withFailureHandler(err => {
+      showAccessDenied('', 'Spreadsheet Access Check Failed: ' + (err && err.message ? err.message : err), '');
+    })
+    .getAccess();
+}
+
+function populateAccessGateBranding(accessObj) {
+  if (!accessObj) return;
+  const logo = accessObj.logoBase64;
+  const name = accessObj.companyName || 'Packing Slip Software';
+  
+  const gateLogo = $('#access-logo');
+  if (gateLogo) {
+    if (logo) {
+      gateLogo.src = logo;
+      gateLogo.style.display = 'block';
+    } else {
+      gateLogo.style.display = 'none';
+    }
+  }
+  
+  const gateName = $('#access-brand-name');
+  if (gateName) gateName.textContent = name;
+}
+
+function showAccessDenied(email, message, authUrl) {
+  $('#access-check').style.display = 'none';
+  $('#access-denied').style.display = 'block';
+  $('#denied-email').textContent = email || 'your-google-account@gmail.com';
+  
+  const msgEl = $('#denied-message');
+  if (message && msgEl) {
+    msgEl.innerHTML = `<p>${message}</p>`;
+    msgEl.style.display = 'block';
+  } else if (msgEl) {
+    msgEl.innerHTML = '';
+    msgEl.style.display = 'none';
+  }
+
+  const btn = $('#reauth-button');
+  if (btn) {
+    if (authUrl) {
+      btn.innerHTML = '<i data-lucide="shield-check" style="width: 16px; height: 16px; display: inline-block; vertical-align: middle; margin-right: 6px;"></i> Review & Grant Permissions';
+      btn.onclick = function() {
+        window.open(authUrl, '_blank');
+        toast('Opening Google Authorization screen. Once allowed, please return here.', 'info');
+      };
+    } else {
+      btn.innerHTML = 'Re-authenticate / Try Again';
+      btn.onclick = function() {
+        checkAccess();
+      };
+    }
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+function setUserEmail(email, name) {
+  if (!email) return;
+  const desktopEmail = $('#user-email');
+  if (desktopEmail) desktopEmail.textContent = email;
+  const mobileEmail = $('#mobile-user-email');
+  if (mobileEmail) mobileEmail.textContent = email;
+  
+  const displayName = $('#user-display-name');
+  if (displayName) displayName.textContent = name || 'Admin';
+}
+
+
+// Application Setup
+function initApp() {
+  // Bind Company settings forms
+  loadSettings();
+  
+  // Admin checking for User Management panel
+  if (window.SERVER_ACCESS && window.SERVER_ACCESS.role === 'Admin') {
+    const userCard = $('#user-management-card');
+    if (userCard) userCard.style.display = 'block';
+    loadUsers();
+  } else {
+    const userCard = $('#user-management-card');
+    if (userCard) userCard.style.display = 'none';
+  }
+  
+  // Set default form triggers and loading
+  loadClients(loadHome);
+  addItemRow('', 1, false);
+  
+  // Listeners
+  const slipClientEl = $('#slip-client');
+  if (slipClientEl) {
+    slipClientEl.addEventListener('change', function() {
+      toggleNewClient();
+      loadSuggestions(this.value);
+    });
+  }
+  
+  // Slip listing live filters
+  const searchEl = $('#filter-search');
+  if (searchEl) searchEl.addEventListener('input', renderSlips);
+  
+  const clientFilterEl = $('#filter-client');
+  if (clientFilterEl) clientFilterEl.addEventListener('change', renderSlips);
+  
+  const filterFromEl = $('#filter-from');
+  if (filterFromEl) filterFromEl.addEventListener('change', renderSlips);
+  
+  const filterToEl = $('#filter-to');
+  if (filterToEl) filterToEl.addEventListener('change', renderSlips);
+  
+  // Initial SVG Icon render
+  if (window.lucide) lucide.createIcons();
+}
+
+// Settings handlers
+// Settings handlers
+function loadSettings() {
+  google.script.run
+    .withSuccessHandler(s => {
+      settings = s || {};
+      $('#company-name').value = settings.CompanyName || 'My Company';
+      $('#company-address').value = settings.Address || '';
+      $('#company-phone').value = settings.Phone || '';
+      
+      // Update brand images and text in UI
+      updateLogoAndBrandUI(settings);
+    })
+    .withFailureHandler(handleError)
+    .getSettings();
+}
+
+function saveSettings() {
+  const compName = $('#company-name').value.trim();
+  const compAddr = $('#company-address').value.trim();
+  const compPhone = $('#company-phone').value.trim();
+  
+  if (!compName) {
+    toast('Company Name is required.', 'danger');
+    return;
+  }
+  
+  const s = {
+    CompanyName: compName,
+    Address: compAddr,
+    Phone: compPhone,
+    LogoBase64: window.logoUploadBase64 || ''
+  };
+  
+  const saveBtn = $('#settings button.btn-primary');
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner"></span> Saving...';
+  }
+  
+  google.script.run
+    .withSuccessHandler(res => {
+      settings = res;
+      toast('Company settings saved successfully', 'success');
+      
+      // Update logo and brand text everywhere
+      updateLogoAndBrandUI(settings);
+      
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = 'Save Settings';
+      }
+    })
+    .withFailureHandler(err => {
+      handleError(err);
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = 'Save Settings';
+      }
+    })
+    .saveSettings(s);
+}
+
+// Update UI branding (Sidebar and mobile title bar logos/texts)
+function updateLogoAndBrandUI(s) {
+  const name = s.CompanyName || 'Packing Slip Admin';
+  const sidebarName = $('#sidebar-brand-name');
+  if (sidebarName) sidebarName.textContent = name;
+  const mobileName = $('#mobile-brand-name');
+  if (mobileName) mobileName.textContent = name;
+
+  const logoBase64 = s.LogoBase64 || '';
+  const sidebarLogo = $('#sidebar-logo');
+  const mobileLogo = $('#mobile-logo');
+  const previewLogo = $('#settings-logo-preview');
+  const clearLogoBtn = $('#btn-clear-logo');
+
+  if (logoBase64) {
+    if (sidebarLogo) {
+      sidebarLogo.src = logoBase64;
+      sidebarLogo.style.display = 'block';
+    }
+    if (mobileLogo) {
+      mobileLogo.src = logoBase64;
+      mobileLogo.style.display = 'block';
+    }
+    if (previewLogo) {
+      previewLogo.src = logoBase64;
+      previewLogo.style.display = 'block';
+    }
+    if (clearLogoBtn) clearLogoBtn.style.display = 'inline-flex';
+    window.logoUploadBase64 = logoBase64;
+  } else {
+    if (sidebarLogo) {
+      sidebarLogo.src = '';
+      sidebarLogo.style.display = 'none';
+    }
+    if (mobileLogo) {
+      mobileLogo.src = '';
+      mobileLogo.style.display = 'none';
+    }
+    if (previewLogo) {
+      previewLogo.src = '';
+      previewLogo.style.display = 'none';
+    }
+    if (clearLogoBtn) clearLogoBtn.style.display = 'none';
+    window.logoUploadBase64 = null;
+  }
+}
+
+// Handle logo selection & canvas compression
+function handleLogoSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  if (!file.type.startsWith('image/')) {
+    toast('Please select an image file (PNG/JPG)', 'danger');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      // Max size: 300px width, 150px height
+      const MAX_WIDTH = 300;
+      const MAX_HEIGHT = 150;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > MAX_WIDTH) {
+          height = Math.round(height * (MAX_WIDTH / width));
+          width = MAX_WIDTH;
+        }
+      } else {
+        if (height > MAX_HEIGHT) {
+          width = Math.round(width * (MAX_HEIGHT / height));
+          height = MAX_HEIGHT;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      
+      // Draw background white to support transparent PNG conversion to JPEG nicely
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Compress to JPEG at 0.85 quality
+      const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      window.logoUploadBase64 = compressedDataUrl;
+
+      // Update preview and clear button
+      const previewImg = $('#settings-logo-preview');
+      if (previewImg) {
+        previewImg.src = compressedDataUrl;
+        previewImg.style.display = 'block';
+      }
+      
+      const clearBtn = $('#btn-clear-logo');
+      if (clearBtn) clearBtn.style.display = 'inline-flex';
+
+      toast('Logo loaded and optimized successfully!', 'success');
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// Clear logo upload
+function clearLogoUpload() {
+  window.logoUploadBase64 = '';
+  $('#logo-file-input').value = '';
+  
+  const previewImg = $('#settings-logo-preview');
+  if (previewImg) {
+    previewImg.src = '';
+    previewImg.style.display = 'none';
+  }
+  
+  const clearBtn = $('#btn-clear-logo');
+  if (clearBtn) clearBtn.style.display = 'none';
+  
+  toast('Logo cleared. Click Save Settings to persist.', 'info');
+}
+
+// Home dashboard loader
+function loadHome() {
+  // Show subtle loaders in stats
+  $$('.stat-card .number').forEach(num => {
+    if (!num.innerHTML.includes('spinner')) {
+      num.innerHTML = '<span class="spinner-small"></span>';
+    }
+  });
+  
+  google.script.run
+    .withSuccessHandler(list => {
+      slips = list || [];
+      updateStats();
+      renderRecentSlips();
+    })
+    .withFailureHandler(err => {
+      handleError(err);
+      $$('.stat-card .number').forEach(num => {
+        num.textContent = '0';
+      });
+    })
+    .getPackingSlips();
+}
+
+function updateStats() {
+  const activeSlips = slips.filter(s => s.slipCode.indexOf('-rev') === -1);
+  $('#stat-clients').textContent = clients.length;
+  $('#stat-slips').textContent = activeSlips.length;
+  
+  // Format local date ISO string comparison
+  const tzoffset = (new Date()).getTimezoneOffset() * 60000; //offset in milliseconds
+  const localISOTime = (new Date(Date.now() - tzoffset)).toISOString().slice(0, 10);
+  
+  const slipsToday = activeSlips.filter(s => s.date === localISOTime).length;
+  $('#stat-today').textContent = slipsToday;
+  
+  const totalQty = activeSlips.reduce((sum, s) => sum + (Number(s.totalQuantity) || 0), 0);
+  $('#stat-qty').textContent = totalQty.toLocaleString();
+}
+
+function renderRecentSlips() {
+  const tbody = $('#recent-slips-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  
+  const activeSlips = slips.filter(s => s.slipCode.indexOf('-rev') === -1);
+  // Slice to get 5 most recent slips
+  const recent = activeSlips.slice().reverse().slice(0, 5);
+  
+  if (!recent.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">No packing slips created yet. Click "+ New Packing Slip" to get started.</td></tr>';
+    return;
+  }
+  
+  recent.forEach(s => {
+    const tr = document.createElement('tr');
+    tr.className = 'table-row-animate';
+    tr.innerHTML = `
+      <td><span class="badge badge-accent">${escapeHtml(s.slipCode)}</span></td>
+      <td><strong>${formatDate(s.date)}</strong></td>
+      <td>${escapeHtml(s.clientName)}</td>
+      <td><span class="badge">${s.totalQuantity || 0}</span></td>
+      <td><span class="badge badge-secondary" title="${escapeHtml(s.createdBy || '')}">${escapeHtml(getDisplayName(s.createdBy))}</span></td>
+      <td>
+        <div class="actions-group">
+          <button class="btn btn-secondary-soft btn-xs" onclick="viewSlipByCode('${s.slipCode}')" title="Preview Slip">
+            <i data-lucide="eye"></i> View
+          </button>
+          <button class="btn btn-accent-soft btn-xs" onclick="printSlipByCode('${s.slipCode}')" title="Download PDF">
+            <i data-lucide="printer"></i> PDF
+          </button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+  
+  if (window.lucide) lucide.createIcons();
+}
+
+// Responsive layout: GAS iframes don't always honour CSS media queries on mobile.
+// JS detection adds/removes 'mobile-view' on <body> as a reliable fallback.
+function initResponsiveLayout() {
+  const BREAKPOINT = 900;
+  
+  // window.innerWidth is reliable inside the GAS iframe
+  const isMobile = window.innerWidth <= BREAKPOINT ||
+    // Touch screen + small physical screen = phone/tablet
+    (navigator.maxTouchPoints > 0 && window.screen.width <= BREAKPOINT);
+  
+  if (isMobile) {
+    document.body.classList.add('mobile-view');
+  } else {
+    document.body.classList.remove('mobile-view');
+  }
+}
+
+window.addEventListener('resize', initResponsiveLayout);
+
+// Register a minimal service worker so the page meets PWA install criteria.
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const swCode = `
+      self.addEventListener('install', function(event) {
+        self.skipWaiting();
+      });
+      self.addEventListener('activate', function(event) {
+        event.waitUntil(self.clients.claim());
+      });
+      self.addEventListener('fetch', function(event) {
+        event.respondWith(fetch(event.request).catch(function() {
+          return caches.match(event.request);
+        }));
+      });
+    `;
+    const blob = new Blob([swCode], { type: 'application/javascript' });
+    const swUrl = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(swUrl).catch(function(err) {
+      console.warn('Service worker registration failed:', err);
+    });
+  } catch (err) {
+    console.warn('Service worker setup failed:', err);
+  }
+}
+
+// App shell startup listener
+document.addEventListener('DOMContentLoaded', function() {
+  initResponsiveLayout();
+  setDynamicGreeting();
+  registerServiceWorker();
+  initInstallPrompt();
+  
+  if (window.SERVER_ACCESS && window.SERVER_ACCESS.access) {
+    const gate = $('#access-gate');
+    if (gate) gate.style.display = 'none';
+    $('#app-shell').style.display = 'flex';
+    if (window.SERVER_ACCESS.email) setUserEmail(window.SERVER_ACCESS.email, window.SERVER_ACCESS.name);
+    initApp();
+  } else if (window.SERVER_ACCESS && !window.SERVER_ACCESS.access) {
+    const gate = $('#access-gate');
+    if (gate) gate.style.display = 'flex';
+    populateAccessGateBranding(window.SERVER_ACCESS);
+    showAccessDenied(window.SERVER_ACCESS.email, window.SERVER_ACCESS.message, window.SERVER_ACCESS.authUrl);
+  } else {
+    checkAccess();
+  }
+});
+
+// PWA Install prompt handling
+let deferredInstallPrompt = null;
+let installPlatform = 'generic';
+
+function detectInstallPlatform() {
+  const ua = navigator.userAgent || '';
+  if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) return 'ios';
+  if (/Android/.test(ua)) return 'android';
+  return 'generic';
+}
+
+function initInstallPrompt() {
+  const prompt = $('#install-prompt');
+  const installBtn = $('#install-btn');
+  const dismissBtn = $('#install-dismiss');
+  
+  if (!prompt || !installBtn || !dismissBtn) return;
+  
+  installPlatform = detectInstallPlatform();
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  const isMobile = installPlatform === 'ios' || installPlatform === 'android' || window.innerWidth <= 900 || (navigator.maxTouchPoints > 0 && window.screen.width <= 900);
+  
+  // Update prompt text for the platform
+  const promptText = prompt.querySelector('.install-prompt-text');
+  if (promptText) {
+    const appName = (window.SERVER_ACCESS && window.SERVER_ACCESS.companyName) ? window.SERVER_ACCESS.companyName : 'this App';
+    if (installPlatform === 'ios') {
+      promptText.textContent = `Add ${appName} to your home screen for quick access.`;
+    } else if (installPlatform === 'android') {
+      promptText.textContent = `Install ${appName} as an app on your phone.`;
+    } else {
+      promptText.textContent = `Add ${appName} to your home screen for quick access.`;
+    }
+  }
+  
+  // Listen for the browser install prompt (Android Chrome mostly)
+  window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    showInstallPrompt();
+  });
+  
+  // Show a custom prompt on mobile after the user has used the app briefly.
+  // This covers iOS Safari, Android browsers where beforeinstallprompt doesn't fire,
+  // and any other mobile browser.
+  if (isMobile && !isStandalone && !localStorage.getItem('kodus-install-dismissed')) {
+    setTimeout(showInstallPrompt, 5000);
+  }
+  
+  installBtn.addEventListener('click', function() {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      deferredInstallPrompt.userChoice.then(choice => {
+        if (choice.outcome === 'accepted') {
+          localStorage.setItem('kodus-install-dismissed', 'true');
+        }
+        deferredInstallPrompt = null;
+        hideInstallPrompt();
+      });
+    } else if (installPlatform === 'ios') {
+      alert('To install: tap the Share button in Safari, then tap "Add to Home Screen".');
+      localStorage.setItem('kodus-install-dismissed', 'true');
+      hideInstallPrompt();
+    } else {
+      alert('To install: open your browser menu and choose "Add to Home screen" or "Install app".');
+      localStorage.setItem('kodus-install-dismissed', 'true');
+      hideInstallPrompt();
+    }
+  });
+  
+  dismissBtn.addEventListener('click', function() {
+    localStorage.setItem('kodus-install-dismissed', 'true');
+    hideInstallPrompt();
+  });
+}
+
+function showInstallPrompt() {
+  const prompt = $('#install-prompt');
+  if (!prompt || localStorage.getItem('kodus-install-dismissed')) return;
+  prompt.classList.add('show');
+}
+
+function hideInstallPrompt() {
+  const prompt = $('#install-prompt');
+  if (prompt) prompt.classList.remove('show');
+}
+
+function openInstallPrompt() {
+  localStorage.removeItem('kodus-install-dismissed');
+  showInstallPrompt();
+}
+
+// ============================================================
+// User Access & Management (Admin Only)
+// ============================================================
+let allUsers = [];
+
+function loadUsers() {
+  google.script.run
+    .withSuccessHandler(function(users) {
+      allUsers = users;
+      renderUsers(users);
+    })
+    .withFailureHandler(function(err) {
+      toast('Error loading users: ' + err.message, 'danger');
+    })
+    .getUsers();
+}
+
+function renderUsers(users) {
+  const tbody = $('#users-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  if (users.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No registered users found.</td></tr>';
+    return;
+  }
+
+  users.forEach(u => {
+    const isSelf = u.email.toLowerCase() === window.SERVER_ACCESS.email.toLowerCase();
+    const joinedDate = u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A';
+    const roleBadge = u.role === 'Admin' 
+      ? '<span class="status-badge" style="background-color: var(--accent-soft); color: var(--accent); font-weight: 600; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">Admin</span>'
+      : '<span class="status-badge" style="background-color: var(--info-soft); color: var(--info); font-weight: 600; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">User</span>';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>
+        <div style="font-weight: 600; color: var(--text);">${escapeHtml(u.name)} ${isSelf ? '<span style="font-weight: normal; font-size: 0.75rem; color: var(--text-muted);">(You)</span>' : ''}</div>
+      </td>
+      <td style="color: var(--text-muted); font-size: 0.9rem;">${escapeHtml(u.email)}</td>
+      <td>${roleBadge}</td>
+      <td style="color: var(--text-muted); font-size: 0.9rem;">${joinedDate}</td>
+      <td style="text-align: right;">
+        <button class="btn btn-secondary btn-sm btn-icon-only" onclick='editUser(${JSON.stringify(u).replace(/'/g, "&apos;")})' title="Edit User" style="margin-right: 0.25rem;">
+          <i data-lucide="edit-2" style="width:14px;height:14px;"></i>
+        </button>
+        <button class="btn btn-secondary btn-sm btn-icon-only" onclick="deleteUserConfirm('${u.id}')" title="Delete User" ${isSelf ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>
+          <i data-lucide="trash-2" style="color: var(--danger); width:14px;height:14px;"></i>
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function saveUserSubmit() {
+  const id = $('#user-edit-id').value;
+  const name = $('#user-input-name').value.trim();
+  const email = $('#user-input-email').value.trim();
+  const role = $('#user-input-role').value;
+
+  if (!name || !email) {
+    toast('Name and Email are required.', 'danger');
+    return;
+  }
+
+  toast('Saving user & updating permissions...', 'info');
+
+  google.script.run
+    .withSuccessHandler(function(savedUser) {
+      if (savedUser.shareWarnings && savedUser.shareWarnings.length > 0) {
+        toast('User registered, but automated sharing failed: ' + savedUser.shareWarnings.join('; ') + '. Please share the Google Sheet and Script project manually.', 'danger');
+      } else {
+        toast(id ? 'User updated successfully!' : 'User added and shared successfully!', 'success');
+      }
+      cancelUserEdit();
+      loadUsers();
+    })
+    .withFailureHandler(function(err) {
+      toast('Error saving user: ' + err.message, 'danger');
+    })
+    .saveUser({ id, name, email, role });
+}
+
+function editUser(user) {
+  $('#user-edit-id').value = user.id;
+  $('#user-input-name').value = user.name;
+  $('#user-input-email').value = user.email;
+  const isSelf = user.email.toLowerCase() === window.SERVER_ACCESS.email.toLowerCase();
+  $('#user-input-email').disabled = isSelf;
+  $('#user-input-role').disabled = isSelf;
+  $('#user-input-role').value = user.role;
+
+  $('#user-form-title').innerHTML = '<i data-lucide="edit" style="width:18px;height:18px;"></i> Edit User Account';
+  $('#user-form-cancel').style.display = 'inline-block';
+  
+  if (window.lucide) lucide.createIcons();
+}
+
+function cancelUserEdit() {
+  $('#user-edit-id').value = '';
+  $('#user-input-name').value = '';
+  $('#user-input-email').value = '';
+  $('#user-input-email').disabled = false;
+  $('#user-input-role').disabled = false;
+  $('#user-input-role').value = 'User';
+
+  $('#user-form-title').innerHTML = '<i data-lucide="user-plus" style="width:18px;height:18px;"></i> Add New User';
+  $('#user-form-cancel').style.display = 'none';
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function deleteUserConfirm(userId) {
+  const user = allUsers.find(u => u.id === userId);
+  if (!user) return;
+
+  if (confirm('Are you sure you want to remove user "' + user.name + '" (' + user.email + ')? This will also revoke their access to the spreadsheet and web app.')) {
+    toast('Removing user and revoking access...', 'info');
+    google.script.run
+      .withSuccessHandler(function() {
+        toast('User removed and access revoked.', 'success');
+        loadUsers();
+      })
+      .withFailureHandler(function(err) {
+        toast('Error removing user: ' + err.message, 'danger');
+      })
+      .deleteUser(userId);
+  }
+}
+</script>
