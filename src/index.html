@@ -552,6 +552,59 @@
       </div>
     </div>
 
+    <!-- PWA Install Guide Modal -->
+    <div id="install-guide-modal" class="modal" onclick="if(event.target===this) closeInstallGuide()">
+      <div class="modal-content" style="max-width: 450px;">
+        <div class="modal-header">
+          <h3 style="display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="download" style="color: var(--accent); width: 20px; height: 20px;"></i> Install Application</h3>
+          <button class="modal-close-btn" onclick="closeInstallGuide()">&times;</button>
+        </div>
+        <div id="install-guide-body" style="padding: 1.5rem;">
+          <p style="margin-bottom: 1.25rem; font-size: 0.95rem; line-height: 1.5; color: var(--text-light);">
+            Google Apps Script hosts applications inside a secure sandbox iframe, which prevents automatic 1-click App Store installations.
+            However, you can easily install this application as a standalone web app using your browser menu:
+          </p>
+          
+          <div class="install-tabs" style="display: flex; gap: 0.5rem; margin-bottom: 1.25rem; border-bottom: 1px solid var(--border); padding-bottom: 0.75rem;">
+            <button class="install-tab-btn active" onclick="switchInstallTab('desktop')" id="tab-btn-desktop" style="flex: 1; padding: 0.5rem; font-size: 0.85rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; font-weight: 600;">Desktop</button>
+            <button class="install-tab-btn" onclick="switchInstallTab('ios')" id="tab-btn-ios" style="flex: 1; padding: 0.5rem; font-size: 0.85rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent; color: var(--text-light); cursor: pointer;">iOS (iPhone)</button>
+            <button class="install-tab-btn" onclick="switchInstallTab('android')" id="tab-btn-android" style="flex: 1; padding: 0.5rem; font-size: 0.85rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent; color: var(--text-light); cursor: pointer;">Android</button>
+          </div>
+          
+          <!-- Desktop Guide -->
+          <div id="install-guide-desktop" class="install-guide-content">
+            <ol style="padding-left: 1.25rem; font-size: 0.9rem; line-height: 1.6; color: var(--text-light);">
+              <li>Look at your browser's address bar (top right).</li>
+              <li>Click the **Install Icon** <i data-lucide="monitor-down" style="width: 14px; height: 14px; display: inline-block; vertical-align: middle; color: var(--accent);"></i> next to the bookmark star.</li>
+              <li>Alternatively, open the browser menu (**three dots / lines**) and click **"Save and share" → "Install page as app"**.</li>
+            </ol>
+          </div>
+          
+          <!-- iOS Guide -->
+          <div id="install-guide-ios" class="install-guide-content" style="display: none;">
+            <ol style="padding-left: 1.25rem; font-size: 0.9rem; line-height: 1.6; color: var(--text-light);">
+              <li>Open this page in the **Safari browser** on your device.</li>
+              <li>Tap the **Share button** <i data-lucide="share" style="width: 14px; height: 14px; display: inline-block; vertical-align: middle; color: var(--accent);"></i> in Safari's bottom toolbar.</li>
+              <li>Scroll down the share list and tap **"Add to Home Screen"** <i data-lucide="plus-square" style="width: 14px; height: 14px; display: inline-block; vertical-align: middle; color: var(--accent);"></i>.</li>
+              <li>Tap **Add** in the top right corner.</li>
+            </ol>
+          </div>
+          
+          <!-- Android Guide -->
+          <div id="install-guide-android" class="install-guide-content" style="display: none;">
+            <ol style="padding-left: 1.25rem; font-size: 0.9rem; line-height: 1.6; color: var(--text-light);">
+              <li>Open this page in Chrome or your default Android browser.</li>
+              <li>Tap the **Menu button** (three dots) in the top-right corner.</li>
+              <li>Select **"Add to Home screen"** or **"Install app"**.</li>
+              <li>Confirm the prompt to install.</li>
+            </ol>
+          </div>
+          
+          <button class="btn btn-secondary btn-md btn-full" onclick="closeInstallGuide()" style="margin-top: 1.5rem;">Got It</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Toast Notification Popup Alert -->
     <div id="toast" class="toast"></div>
 

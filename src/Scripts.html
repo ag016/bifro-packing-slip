@@ -668,13 +668,9 @@ function initInstallPrompt() {
         deferredInstallPrompt = null;
         hideInstallPrompt();
       });
-    } else if (installPlatform === 'ios') {
-      alert('To install: tap the Share button in Safari, then tap "Add to Home Screen".');
-      localStorage.setItem('packing-slip-install-dismissed', 'true');
-      hideInstallPrompt();
     } else {
-      alert('To install: open your browser menu and choose "Add to Home screen" or "Install app".');
-      localStorage.setItem('packing-slip-install-dismissed', 'true');
+      // Sandboxed iframe limitation prevents native install prompt - show visual guide modal!
+      openInstallPrompt();
       hideInstallPrompt();
     }
   });
@@ -697,8 +693,52 @@ function hideInstallPrompt() {
 }
 
 function openInstallPrompt() {
-  localStorage.removeItem('packing-slip-install-dismissed');
-  showInstallPrompt();
+  const modal = $('#install-guide-modal');
+  if (modal) {
+    modal.classList.add('show');
+    // Pre-select tab based on detected platform
+    if (installPlatform === 'ios') {
+      switchInstallTab('ios');
+    } else if (installPlatform === 'android') {
+      switchInstallTab('android');
+    } else {
+      switchInstallTab('desktop');
+    }
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+function closeInstallGuide() {
+  const modal = $('#install-guide-modal');
+  if (modal) modal.classList.remove('show');
+}
+
+function switchInstallTab(tab) {
+  const contents = document.querySelectorAll('.install-guide-content');
+  contents.forEach(c => c.style.display = 'none');
+  
+  const buttons = document.querySelectorAll('.install-tab-btn');
+  buttons.forEach(b => {
+    b.classList.remove('active');
+    b.style.background = 'transparent';
+    b.style.fontWeight = 'normal';
+    b.style.color = 'var(--text-light)';
+    b.style.borderColor = 'var(--border)';
+  });
+  
+  const activeContent = $('#install-guide-' + tab);
+  if (activeContent) activeContent.style.display = 'block';
+  
+  const activeBtn = $('#tab-btn-' + tab);
+  if (activeBtn) {
+    activeBtn.classList.add('active');
+    activeBtn.style.background = 'var(--bg)';
+    activeBtn.style.fontWeight = '600';
+    activeBtn.style.color = 'var(--text)';
+    activeBtn.style.borderColor = 'var(--border)';
+  }
+  
+  if (window.lucide) lucide.createIcons();
 }
 
 // ============================================================
