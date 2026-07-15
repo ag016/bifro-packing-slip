@@ -919,6 +919,8 @@
   <!-- Inline Date Defaulting -->
   <script>
     document.getElementById('slip-date').valueAsDate = new Date();
+    if (document.getElementById('order-date')) document.getElementById('order-date').valueAsDate = new Date();
+    if (document.getElementById('invoice-date')) document.getElementById('invoice-date').valueAsDate = new Date();
   </script>
 </body>
 </html>

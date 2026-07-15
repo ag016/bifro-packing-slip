@@ -1,7 +1,7 @@
 <script>
 /**
  * Packing Slip Software - Invoice Controller
- * Invoice management event handlers, rendering, and inline editing
+ * Invoice management event handlers, rendering, and inline editing (Simplifed, Price fields removed)
  */
 
 let editingInvoiceId = null;
@@ -10,12 +10,18 @@ function loadInvoices(callback) {
   if (clients.length) {
     populateClientSelect();
   }
+  if ($('#invoice-date') && !$('#invoice-date').value) {
+    $('#invoice-date').valueAsDate = new Date();
+  }
   // Ensure clients are loaded first
   if (!clients.length) {
     google.script.run
       .withSuccessHandler(list => {
         clients = list || [];
         populateClientSelect();
+        if ($('#invoice-date') && !$('#invoice-date').value) {
+          $('#invoice-date').valueAsDate = new Date();
+        }
         doLoadInvoices(callback);
       })
       .withFailureHandler(handleError)
@@ -71,7 +77,6 @@ function renderInvoices() {
 
     const itemsCount = (inv.items || []).length;
     const totalQty = (inv.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-    const totalPrice = (inv.items || []).reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unitPrice || 0)), 0);
 
     const tr = document.createElement('tr');
     tr.className = 'table-row-animate';
@@ -79,7 +84,7 @@ function renderInvoices() {
       <td><span class="badge badge-accent">${escapeHtml(inv.id || '')}</span></td>
       <td><strong>${formatDate(inv.date)}</strong></td>
       <td>${escapeHtml(inv.clientName || '')}</td>
-      <td>${itemsCount} items (${totalQty} units, $${totalPrice.toFixed(2)})</td>
+      <td>${itemsCount} items (${totalQty} units)</td>
       <td><span class="badge ${statusClass}">${escapeHtml(inv.status || 'Unpaid')}</span></td>
       <td>
         <div style="display:flex; gap: 4px;">
@@ -98,7 +103,7 @@ function renderInvoices() {
   if (window.lucide) lucide.createIcons();
 }
 
-function addInvoiceItemRow(name, qty, unitPrice) {
+function addInvoiceItemRow(name, qty) {
   const container = $('#invoice-items-container');
   if (!container) return;
 
@@ -107,21 +112,13 @@ function addInvoiceItemRow(name, qty, unitPrice) {
   const id = 'invoice-item-' + Date.now() + '-' + Math.floor(Math.random()*1000);
 
   row.innerHTML = `
-    <div class="field-group flex-2">
+    <div class="field-group flex-3">
       <label for="${id}-name" class="label-inline">Product Description</label>
       <input type="text" id="${id}-name" class="item-name" placeholder="Item name..." value="${escapeHtml(name || '')}" required>
     </div>
     <div class="field-group flex-1">
       <label for="${id}-qty" class="label-inline">Invoiced Qty</label>
-      <input type="number" id="${id}-qty" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty || 1}" oninput="calcInvoiceRowTotal(this)" required>
-    </div>
-    <div class="field-group flex-1">
-      <label for="${id}-price" class="label-inline">Unit Price ($)</label>
-      <input type="number" id="${id}-price" class="item-price" placeholder="Price" min="0" step="0.01" value="${unitPrice || 0.00}" oninput="calcInvoiceRowTotal(this)" required>
-    </div>
-    <div style="display:flex; flex-direction:column; justify-content:center; padding: 0.25rem 0.5rem; font-size:0.85rem; font-weight:600; min-width:80px;">
-      <span style="font-size:0.7rem; color:var(--text-muted); font-weight:400; text-transform:uppercase;">Total</span>
-      <span class="row-total">$${((qty || 1) * (unitPrice || 0)).toFixed(2)}</span>
+      <input type="number" id="${id}-qty" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty || 1}" required>
     </div>
     <div class="btn-delete-container">
       <button type="button" class="btn-icon btn-danger-soft" onclick="this.closest('.item-row').remove()" title="Remove Row">
@@ -131,14 +128,6 @@ function addInvoiceItemRow(name, qty, unitPrice) {
   `;
   container.appendChild(row);
   if (window.lucide) lucide.createIcons();
-}
-
-function calcInvoiceRowTotal(input) {
-  const row = input.closest('.item-row');
-  if (!row) return;
-  const qty = parseInt(row.querySelector('.item-qty').value, 10) || 0;
-  const price = parseFloat(row.querySelector('.item-price').value) || 0;
-  row.querySelector('.row-total').textContent = '$' + (qty * price).toFixed(2);
 }
 
 function editInvoice(invoiceId) {
@@ -156,9 +145,9 @@ function editInvoice(invoiceId) {
   if (container) {
     container.innerHTML = '';
     if (inv.items && inv.items.length) {
-      inv.items.forEach(it => addInvoiceItemRow(it.name, it.quantity, it.unitPrice));
+      inv.items.forEach(it => addInvoiceItemRow(it.name, it.quantity));
     } else {
-      addInvoiceItemRow('', 1, 0);
+      addInvoiceItemRow('', 1);
     }
   }
 
@@ -180,7 +169,8 @@ function cancelInvoiceEdit() {
   editingInvoiceId = null;
   $('#invoice-form').reset();
   $('#invoice-items-container').innerHTML = '';
-  addInvoiceItemRow('', 1, 0);
+  addInvoiceItemRow('', 1);
+  if ($('#invoice-date')) $('#invoice-date').valueAsDate = new Date();
   
   const cancelBtn = $('#btn-cancel-invoice-edit');
   if (cancelBtn) cancelBtn.style.display = 'none';
@@ -196,7 +186,7 @@ function cancelInvoiceEdit() {
 
 function saveInvoiceSubmit() {
   const clientId = $('#invoice-client').value;
-  const invoiceDate = $('#invoice-date').value;
+  const invoiceDate = $('#invoice-date').value || new Date().toISOString().substring(0, 10);
   const status = $('#invoice-status').value;
   
   if (!clientId) {
@@ -204,8 +194,11 @@ function saveInvoiceSubmit() {
     return;
   }
   
-  const clientObj = clients.find(c => c.id === clientId);
-  if (!clientObj) return;
+  const clientObj = clients.find(c => String(c.id).trim() === String(clientId).trim());
+  if (!clientObj) {
+    toast('Selected client not found in database.', 'danger');
+    return;
+  }
 
   // Gather items
   const rows = document.querySelectorAll('#invoice-items-container .item-row');
@@ -215,7 +208,6 @@ function saveInvoiceSubmit() {
   rows.forEach((row, idx) => {
     const name = row.querySelector('.item-name').value.trim();
     const qty = parseInt(row.querySelector('.item-qty').value, 10);
-    const price = parseFloat(row.querySelector('.item-price').value);
     
     if (!name) {
       toast(`Row ${idx + 1}: Description is required.`, 'danger');
@@ -227,12 +219,7 @@ function saveInvoiceSubmit() {
       valid = false;
       return;
     }
-    if (isNaN(price) || price < 0) {
-      toast(`Row ${idx + 1}: Price must be a valid non-negative number.`, 'danger');
-      valid = false;
-      return;
-    }
-    items.push({ name, quantity: qty, unitPrice: price });
+    items.push({ name, quantity: qty });
   });
 
   if (!valid) return;
@@ -289,6 +276,6 @@ function deleteInvoiceClick(invoiceId) {
 // Initialise items container
 document.addEventListener('DOMContentLoaded', () => {
   const container = $('#invoice-items-container');
-  if (container) addInvoiceItemRow('', 1, 0);
+  if (container) addInvoiceItemRow('', 1);
 });
 </script>

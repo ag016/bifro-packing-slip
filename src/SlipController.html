@@ -1198,7 +1198,7 @@ function toggleLinkInvoiceCreateForm(show) {
   if (show) {
     $('#link-invoice-date').valueAsDate = new Date();
     $('#link-invoice-items-container').innerHTML = '';
-    addLinkInvoiceItemRow('', 1, 0);
+    addLinkInvoiceItemRow('', 1);
   }
 }
 
@@ -1219,7 +1219,7 @@ function addLinkOrderItemRow(name, qty) {
   if (window.lucide) lucide.createIcons();
 }
 
-function addLinkInvoiceItemRow(name, qty, price) {
+function addLinkInvoiceItemRow(name, qty) {
   const container = $('#link-invoice-items-container');
   if (!container) return;
   const row = document.createElement('div');
@@ -1229,7 +1229,6 @@ function addLinkInvoiceItemRow(name, qty, price) {
   row.innerHTML = `
     <input type="text" class="item-name" placeholder="Item name..." value="${escapeHtml(name)}" style="flex:2; padding:0.25rem;" required>
     <input type="number" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty}" style="flex:1; padding:0.25rem;" required>
-    <input type="number" class="item-price" placeholder="Price" min="0" step="0.01" value="${price}" style="flex:1; padding:0.25rem;" required>
     <button type="button" class="btn-icon btn-danger-soft" onclick="this.closest('.item-row').remove()" style="padding:0.25rem;"><i data-lucide="trash-2" style="width:12px; height:12px;"></i></button>
   `;
   container.appendChild(row);
@@ -1430,11 +1429,14 @@ function saveLinkOrderOnTheFly() {
 
 function saveLinkInvoiceOnTheFly() {
   const clientId = $('#slip-client').value;
-  const date = $('#link-invoice-date').value;
+  const date = $('#link-invoice-date').value || new Date().toISOString().substring(0, 10);
   
   if (!clientId || clientId === 'new') return;
-  const clientObj = clients.find(c => c.id === clientId);
-  if (!clientObj) return;
+  const clientObj = clients.find(c => String(c.id).trim() === String(clientId).trim());
+  if (!clientObj) {
+    toast('Selected client not found in database.', 'danger');
+    return;
+  }
 
   const rows = $$('#link-invoice-create-section .item-row');
   const items = [];
@@ -1443,7 +1445,6 @@ function saveLinkInvoiceOnTheFly() {
   rows.forEach((row, idx) => {
     const name = row.querySelector('.item-name').value.trim();
     const qty = parseInt(row.querySelector('.item-qty').value, 10);
-    const price = parseFloat(row.querySelector('.item-price').value);
     
     if (!name) {
       toast(`Row ${idx + 1}: Description is required.`, 'danger');
@@ -1455,18 +1456,13 @@ function saveLinkInvoiceOnTheFly() {
       valid = false;
       return;
     }
-    if (isNaN(price) || price < 0) {
-      toast(`Row ${idx + 1}: Price must be a non-negative number.`, 'danger');
-      valid = false;
-      return;
-    }
-    items.push({ name, quantity: qty, unitPrice: price });
+    items.push({ name, quantity: qty });
   });
 
   if (!valid) return;
 
   const invoice = {
-    date: date || new Date().toISOString().substring(0, 10),
+    date: date,
     clientId: clientId,
     clientName: clientObj.name,
     items: items,
