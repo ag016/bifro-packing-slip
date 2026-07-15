@@ -8,6 +8,48 @@
 const $ = sel => document.querySelector(sel);
 const $$ = sel => document.querySelectorAll(sel);
 
+// Dynamic proxy wrapper for google.script.run
+(function() {
+  if (typeof google !== 'undefined' && google.script && google.script.run) {
+    const originalRun = google.script.run;
+    function createRunner(successHandler, failureHandler) {
+      return new Proxy({}, {
+        get: function(target, prop) {
+          if (prop === 'withSuccessHandler') {
+            return function(onSuccess) {
+              return createRunner(onSuccess, failureHandler);
+            };
+          }
+          if (prop === 'withFailureHandler') {
+            return function(onFailure) {
+              return createRunner(successHandler, onFailure);
+            };
+          }
+          if (prop === 'withUserObject') {
+            return function() {
+              return createRunner(successHandler, failureHandler);
+            };
+          }
+          
+          return function() {
+            const args = Array.prototype.slice.call(arguments);
+            let runner = originalRun;
+            if (successHandler) runner = runner.withSuccessHandler(successHandler);
+            if (failureHandler) runner = runner.withFailureHandler(failureHandler);
+            
+            if (typeof runner[prop] === 'function') {
+              runner[prop].apply(runner, args);
+            } else {
+              runner.runCentral(prop, args);
+            }
+          };
+        }
+      });
+    }
+    google.script.run = createRunner(null, null);
+  }
+})();
+
 // Global State
 let settings = {};
 let clients = [];

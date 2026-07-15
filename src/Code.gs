@@ -1271,3 +1271,10 @@ function recalculateLinkedStatuses(orderIds, invoiceIds) {
     });
   }
 }
+
+function runCentral(functionName, args) {
+  if (typeof globalThis[functionName] === 'function') {
+    return globalThis[functionName].apply(null, args || []);
+  }
+  throw new Error("Function " + functionName + " is not defined in Central Library.");
+}
