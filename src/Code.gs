@@ -1,5 +1,5 @@
 /**
- * Kodus Home - Packing Slip Web App
+ * Packing Slip Software - Backend Script
  * Google Apps Script backend
  */
 

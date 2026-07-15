@@ -1,6 +1,6 @@
 <script>
 /**
- * Kodus Home - Core Application Script
+ * Packing Slip Software - Core Application Script
  * Application shell, access control, state management, and utility helpers
  */
 
@@ -654,7 +654,7 @@ function initInstallPrompt() {
   // Show a custom prompt on mobile after the user has used the app briefly.
   // This covers iOS Safari, Android browsers where beforeinstallprompt doesn't fire,
   // and any other mobile browser.
-  if (isMobile && !isStandalone && !localStorage.getItem('kodus-install-dismissed')) {
+  if (isMobile && !isStandalone && !localStorage.getItem('packing-slip-install-dismissed')) {
     setTimeout(showInstallPrompt, 5000);
   }
   
@@ -663,31 +663,31 @@ function initInstallPrompt() {
       deferredInstallPrompt.prompt();
       deferredInstallPrompt.userChoice.then(choice => {
         if (choice.outcome === 'accepted') {
-          localStorage.setItem('kodus-install-dismissed', 'true');
+          localStorage.setItem('packing-slip-install-dismissed', 'true');
         }
         deferredInstallPrompt = null;
         hideInstallPrompt();
       });
     } else if (installPlatform === 'ios') {
       alert('To install: tap the Share button in Safari, then tap "Add to Home Screen".');
-      localStorage.setItem('kodus-install-dismissed', 'true');
+      localStorage.setItem('packing-slip-install-dismissed', 'true');
       hideInstallPrompt();
     } else {
       alert('To install: open your browser menu and choose "Add to Home screen" or "Install app".');
-      localStorage.setItem('kodus-install-dismissed', 'true');
+      localStorage.setItem('packing-slip-install-dismissed', 'true');
       hideInstallPrompt();
     }
   });
   
   dismissBtn.addEventListener('click', function() {
-    localStorage.setItem('kodus-install-dismissed', 'true');
+    localStorage.setItem('packing-slip-install-dismissed', 'true');
     hideInstallPrompt();
   });
 }
 
 function showInstallPrompt() {
   const prompt = $('#install-prompt');
-  if (!prompt || localStorage.getItem('kodus-install-dismissed')) return;
+  if (!prompt || localStorage.getItem('packing-slip-install-dismissed')) return;
   prompt.classList.add('show');
 }
 
@@ -697,7 +697,7 @@ function hideInstallPrompt() {
 }
 
 function openInstallPrompt() {
-  localStorage.removeItem('kodus-install-dismissed');
+  localStorage.removeItem('packing-slip-install-dismissed');
   showInstallPrompt();
 }
 

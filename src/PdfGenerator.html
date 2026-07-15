@@ -1,6 +1,6 @@
 <script>
 /**
- * Kodus Home - PDF Generator
+ * Packing Slip Software - PDF Generator
  * Renders high-quality PDF downloads using jsPDF and AutoTable
  */
 
@@ -46,7 +46,7 @@ function generatePDF(slip, settings) {
     }
   }
 
-  const companyName = settings.CompanyName || 'Kodus Home';
+  const companyName = settings.CompanyName || 'My Company';
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(15, 23, 42); // slate-900 (primary theme color)

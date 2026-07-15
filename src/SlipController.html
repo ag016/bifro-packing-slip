@@ -1,6 +1,6 @@
 <script>
 /**
- * Kodus Home - Packing Slip Controller
+ * Packing Slip Software - Packing Slip Controller
  * Form management, item grids, searching, filtering, and previewing
  */
 
@@ -671,7 +671,7 @@ function viewSlipByCode(slipCode) {
             <img src="${settings.LogoBase64}" class="preview-logo" alt="Logo">
           ` : ''}
           <div class="preview-company-details">
-            <h4 class="preview-company-name">${escapeHtml(settings.CompanyName || 'Kodus Home')}</h4>
+            <h4 class="preview-company-name">${escapeHtml(settings.CompanyName || 'My Company')}</h4>
             <p class="preview-text-muted text-pre-line">${escapeHtml(settings.Address || '')}</p>
             <p class="preview-text-muted">${settings.Phone ? 'Phone: ' + escapeHtml(settings.Phone) : ''}</p>
           </div>
@@ -762,7 +762,7 @@ function viewSlipByCode(slipCode) {
       
       <!-- Footer -->
       <div class="preview-footer">
-        <p>Thank you for choosing ${escapeHtml(settings.CompanyName || 'Kodus Home')}!</p>
+        <p>Thank you for choosing ${escapeHtml(settings.CompanyName || 'My Company')}!</p>
       </div>
     </div>
   `;
