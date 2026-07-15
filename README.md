@@ -1,4 +1,4 @@
-# Kodus Home - Packing Slip Web App (Refactored)
+# Bifro Packing Slip - Web App (Refactored)
 
 A modern, responsive, and robust web application for creating packing slips and delivery notes. All data is saved to a Google Sheet, and slips can be downloaded as professional PDF documents.
 
@@ -14,7 +14,7 @@ The project has been organized into logical directories for clean file managemen
   * `SlipController.html` – Packing slip editor, visual print-preview, and filters.
   * `PdfGenerator.html` – High-quality PDF rendering engine using jsPDF.
 * **`assets/`**: Static resource files (not uploaded to Apps Script).
-  * `Kodus Logo.jpg` – High-res company logo image.
+  * `Bifro Logo.jpg` – High-res company logo image.
   * `Packing Slip - Google Sheets.pdf` – Example output PDF layout.
 
 ---
@@ -24,7 +24,7 @@ The project has been organized into logical directories for clean file managemen
 ### Option A: Manual Copy-Paste (Recommended for Beginners)
 
 1. **Create a Google Sheet**:
-   * Open [Google Sheets](https://sheets.new) and create a blank spreadsheet (e.g. **Kodus Home - Packing Slips**).
+   * Open [Google Sheets](https://sheets.new) and create a blank spreadsheet (e.g. **Bifro Packing Slips**).
 2. **Open Apps Script**:
    * In the spreadsheet menu, go to **Extensions → Apps Script**.
    * Delete the default code inside `Code.gs`.

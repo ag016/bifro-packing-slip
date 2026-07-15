@@ -1,5 +1,5 @@
 {
-  "name": "packing-slip-software",
+  "name": "bifro-packing-slip",
   "version": "1.0.0",
   "description": "A modern, responsive, and robust web application for creating packing slips and delivery notes. All data is saved to a Google Sheet, and slips can be downloaded as professional PDF documents.",
   "main": "index.js",
