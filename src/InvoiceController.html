@@ -1,7 +1,7 @@
 <script>
 /**
  * Packing Slip Software - Invoice Controller
- * Invoice management event handlers, rendering, and inline editing (Simplifed, Price fields removed)
+ * Invoice management event handlers, rendering, suggestions, and optional Custom Invoice ID.
  */
 
 let editingInvoiceId = null;
@@ -114,7 +114,7 @@ function addInvoiceItemRow(name, qty, shipped) {
   row.innerHTML = `
     <div class="field-group flex-2">
       <label for="${id}-name" class="label-inline">Product Description</label>
-      <input type="text" id="${id}-name" class="item-name" placeholder="Item name..." value="${escapeHtml(name || '')}" required>
+      <input type="text" id="${id}-name" class="item-name" placeholder="Item name..." value="${escapeHtml(name || '')}" list="suggestions-list-invoice" required>
     </div>
     <div class="field-group flex-1">
       <label for="${id}-qty" class="label-inline">Invoiced Qty</label>
@@ -143,6 +143,12 @@ function editInvoice(invoiceId) {
   $('#invoice-client').value = inv.clientId || '';
   $('#invoice-date').value = inv.date || '';
   
+  const customIdInput = $('#invoice-custom-id');
+  if (customIdInput) {
+    customIdInput.value = inv.id || '';
+    customIdInput.disabled = true;
+  }
+  
   // Populate items
   const container = $('#invoice-items-container');
   if (container) {
@@ -153,6 +159,9 @@ function editInvoice(invoiceId) {
       addInvoiceItemRow('', 1, 0);
     }
   }
+
+  // Load suggestions
+  loadInvoiceClientSuggestions();
 
   // UI state updates
   const cancelBtn = $('#btn-cancel-invoice-edit');
@@ -171,9 +180,19 @@ function editInvoice(invoiceId) {
 function cancelInvoiceEdit() {
   editingInvoiceId = null;
   $('#invoice-form').reset();
+  
+  const customIdInput = $('#invoice-custom-id');
+  if (customIdInput) {
+    customIdInput.value = '';
+    customIdInput.disabled = false;
+  }
+  
   $('#invoice-items-container').innerHTML = '';
   addInvoiceItemRow('', 1, 0);
   if ($('#invoice-date')) $('#invoice-date').valueAsDate = new Date();
+  
+  const box = $('#invoice-suggestions-box');
+  if (box) box.style.display = 'none';
   
   const cancelBtn = $('#btn-cancel-invoice-edit');
   if (cancelBtn) cancelBtn.style.display = 'none';
@@ -190,6 +209,7 @@ function cancelInvoiceEdit() {
 function saveInvoiceSubmit() {
   const clientId = $('#invoice-client').value;
   const invoiceDate = $('#invoice-date').value || new Date().toISOString().substring(0, 10);
+  const customId = $('#invoice-custom-id').value.trim();
   
   if (!clientId) {
     toast('Client selection is required.', 'danger');
@@ -236,6 +256,7 @@ function saveInvoiceSubmit() {
   const currentInvoice = invoices.find(inv => inv.id === editingInvoiceId) || {};
   const invoice = {
     id: editingInvoiceId || '',
+    customId: customId,
     date: invoiceDate,
     clientId: clientId,
     clientName: clientObj.name,
@@ -283,9 +304,84 @@ function deleteInvoiceClick(invoiceId) {
     .deleteInvoice(invoiceId);
 }
 
-// Initialise items container
+function loadInvoiceClientSuggestions() {
+  const clientId = $('#invoice-client').value;
+  const box = $('#invoice-suggestions-box');
+  if (!clientId || clientId === 'new') {
+    if (box) box.style.display = 'none';
+    return;
+  }
+  
+  google.script.run
+    .withSuccessHandler(list => {
+      renderInvoiceSuggestions(list || []);
+    })
+    .withFailureHandler(handleError)
+    .getSuggestions(clientId);
+}
+
+function renderInvoiceSuggestions(list) {
+  const box = $('#invoice-suggestions-box');
+  if (!box) return;
+  
+  box.innerHTML = '<datalist id="suggestions-list-invoice"></datalist>';
+  const datalist = $('#suggestions-list-invoice');
+  
+  if (!list.length) {
+    box.style.display = 'none';
+    return;
+  }
+  
+  box.style.display = 'block';
+  
+  const chipContainer = document.createElement('div');
+  chipContainer.className = 'chip-container';
+  
+  const title = document.createElement('div');
+  title.className = 'suggestions-title';
+  title.innerHTML = '<i data-lucide="sparkles" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Client Product Recommendations (click to add):';
+  chipContainer.appendChild(title);
+  
+  list.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s;
+    datalist.appendChild(opt);
+    
+    const chip = document.createElement('span');
+    chip.className = 'chip animate-scale-up';
+    chip.textContent = s;
+    chip.onclick = () => {
+      const rows = document.querySelectorAll('#invoice-items-container .item-row-four-cols');
+      let populated = false;
+      for (let i = 0; i < rows.length; i++) {
+        const nameVal = rows[i].querySelector('.item-name').value.trim();
+        if (!nameVal) {
+          rows[i].querySelector('.item-name').value = s;
+          populated = true;
+          break;
+        }
+      }
+      if (!populated) {
+        addInvoiceItemRow(s, 1, 0);
+      }
+    };
+    chipContainer.appendChild(chip);
+  });
+  
+  box.appendChild(chipContainer);
+  if (window.lucide) lucide.createIcons();
+}
+
+// Initialise items container and listeners
 document.addEventListener('DOMContentLoaded', () => {
   const container = $('#invoice-items-container');
   if (container) addInvoiceItemRow('', 1, 0);
+  
+  const clientSelect = $('#invoice-client');
+  if (clientSelect) {
+    clientSelect.addEventListener('change', () => {
+      loadInvoiceClientSuggestions();
+    });
+  }
 });
 </script>

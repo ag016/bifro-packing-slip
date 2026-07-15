@@ -98,10 +98,36 @@ function getLicenseExpiredHtml() {
 
 function getSheet(name, create) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(name);
+  var sheets = ss.getSheets();
+  var sheet = null;
+  var searchName = name.toLowerCase().trim();
+  
+  for (var i = 0; i < sheets.length; i++) {
+    var sName = sheets[i].getName().toLowerCase().trim();
+    if (sName === searchName) {
+      sheet = sheets[i];
+      // Rename it to the canonical name if it's slightly off
+      if (sheets[i].getName() !== name) {
+        try {
+          sheets[i].setName(name);
+        } catch(e) {}
+      }
+      break;
+    }
+  }
+  
   if (!sheet && create !== false) {
-    sheet = ss.insertSheet(name);
-    initSheet(sheet, name);
+    try {
+      sheet = ss.insertSheet(name);
+      initSheet(sheet, name);
+    } catch (e) {
+      // Fallback: if insert fails, maybe it already exists under some other internal name or condition
+      sheet = ss.getSheetByName(name) || ss.insertSheet();
+      try {
+        sheet.setName(name);
+      } catch(err) {}
+      initSheet(sheet, name);
+    }
   }
   return sheet;
 }
@@ -716,8 +742,10 @@ function savePackingSlip(slip) {
 function getSuggestions(clientId) {
   checkLicenseOrThrow();
   if (!clientId) return [];
-  var slips = getPackingSlips();
   var suggestions = {};
+  
+  // 1. Get from past packing slips
+  var slips = getPackingSlips();
   for (var i = 0; i < slips.length; i++) {
     if (slips[i].clientId === clientId && slips[i].items) {
       for (var j = 0; j < slips[i].items.length; j++) {
@@ -726,6 +754,33 @@ function getSuggestions(clientId) {
       }
     }
   }
+  
+  // 2. Get from client's Orders
+  try {
+    var ordersList = getOrders();
+    for (var i = 0; i < ordersList.length; i++) {
+      if (ordersList[i].clientId === clientId && ordersList[i].items) {
+        for (var j = 0; j < ordersList[i].items.length; j++) {
+          var name = String(ordersList[i].items[j].name || '').trim();
+          if (name) suggestions[name] = true;
+        }
+      }
+    }
+  } catch(e) {}
+
+  // 3. Get from client's Invoices
+  try {
+    var invoicesList = getInvoices();
+    for (var i = 0; i < invoicesList.length; i++) {
+      if (invoicesList[i].clientId === clientId && invoicesList[i].items) {
+        for (var j = 0; j < invoicesList[i].items.length; j++) {
+          var name = String(invoicesList[i].items[j].name || '').trim();
+          if (name) suggestions[name] = true;
+        }
+      }
+    }
+  } catch(e) {}
+  
   return Object.keys(suggestions).sort();
 }
 
@@ -823,7 +878,18 @@ function saveOrder(order) {
     if (!found) throw new Error('Order ID ' + order.id + ' not found for update.');
   } else {
     // Create new order
-    order.id = getNextId(COUNTERS.ORDER, 'OR-');
+    if (order.customId) {
+      // Check for uniqueness
+      for (var i = 1; i < values.length; i++) {
+        if (String(values[i][0]).toLowerCase().trim() === String(order.customId).toLowerCase().trim()) {
+          throw new Error('Order Number ' + order.customId + ' already exists. Please choose a unique number.');
+        }
+      }
+      order.id = order.customId;
+    } else {
+      order.id = getNextId(COUNTERS.ORDER, 'OR-');
+    }
+    
     sheet.appendRow([
       order.id,
       order.date || '',
@@ -911,7 +977,18 @@ function saveInvoice(invoice) {
     if (!found) throw new Error('Invoice ID ' + invoice.id + ' not found for update.');
   } else {
     // Create new invoice
-    invoice.id = getNextId(COUNTERS.INVOICE, 'INV-');
+    if (invoice.customId) {
+      // Check for uniqueness
+      for (var i = 1; i < values.length; i++) {
+        if (String(values[i][0]).toLowerCase().trim() === String(invoice.customId).toLowerCase().trim()) {
+          throw new Error('Invoice Number ' + invoice.customId + ' already exists. Please choose a unique number.');
+        }
+      }
+      invoice.id = invoice.customId;
+    } else {
+      invoice.id = getNextId(COUNTERS.INVOICE, 'INV-');
+    }
+    
     sheet.appendRow([
       invoice.id,
       invoice.date || '',

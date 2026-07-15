@@ -1,7 +1,7 @@
 <script>
 /**
  * Packing Slip Software - Order Controller
- * Order management event handlers, rendering, and inline editing
+ * Order management event handlers, rendering, suggestions, and optional Custom Order ID.
  */
 
 let editingOrderId = null;
@@ -113,7 +113,7 @@ function addOrderItemRow(name, qty, shipped) {
   row.innerHTML = `
     <div class="field-group flex-2">
       <label for="${id}-name" class="label-inline">Product Description</label>
-      <input type="text" id="${id}-name" class="item-name" placeholder="Item name..." value="${escapeHtml(name || '')}" required>
+      <input type="text" id="${id}-name" class="item-name" placeholder="Item name..." value="${escapeHtml(name || '')}" list="suggestions-list-order" required>
     </div>
     <div class="field-group flex-1">
       <label for="${id}-qty" class="label-inline">Ordered Qty</label>
@@ -142,6 +142,12 @@ function editOrder(orderId) {
   $('#order-client').value = o.clientId || '';
   $('#order-date').value = o.date || '';
   
+  const customIdInput = $('#order-custom-id');
+  if (customIdInput) {
+    customIdInput.value = o.id || '';
+    customIdInput.disabled = true;
+  }
+  
   // Populate items
   const container = $('#order-items-container');
   if (container) {
@@ -152,6 +158,9 @@ function editOrder(orderId) {
       addOrderItemRow('', 1, 0);
     }
   }
+
+  // Load suggestions
+  loadOrderClientSuggestions();
 
   // UI state updates
   const cancelBtn = $('#btn-cancel-order-edit');
@@ -170,9 +179,19 @@ function editOrder(orderId) {
 function cancelOrderEdit() {
   editingOrderId = null;
   $('#order-form').reset();
+  
+  const customIdInput = $('#order-custom-id');
+  if (customIdInput) {
+    customIdInput.value = '';
+    customIdInput.disabled = false;
+  }
+  
   $('#order-items-container').innerHTML = '';
   addOrderItemRow('', 1, 0);
   if ($('#order-date')) $('#order-date').valueAsDate = new Date();
+  
+  const box = $('#order-suggestions-box');
+  if (box) box.style.display = 'none';
   
   const cancelBtn = $('#btn-cancel-order-edit');
   if (cancelBtn) cancelBtn.style.display = 'none';
@@ -189,6 +208,7 @@ function cancelOrderEdit() {
 function saveOrderSubmit() {
   const clientId = $('#order-client').value;
   const orderDate = $('#order-date').value || new Date().toISOString().substring(0, 10);
+  const customId = $('#order-custom-id').value.trim();
   
   if (!clientId) {
     toast('Client selection is required.', 'danger');
@@ -235,6 +255,7 @@ function saveOrderSubmit() {
   const currentOrder = orders.find(o => o.id === editingOrderId) || {};
   const order = {
     id: editingOrderId || '',
+    customId: customId,
     date: orderDate,
     clientId: clientId,
     clientName: clientObj.name,
@@ -282,9 +303,84 @@ function deleteOrderClick(orderId) {
     .deleteOrder(orderId);
 }
 
-// Initialise items container
+function loadOrderClientSuggestions() {
+  const clientId = $('#order-client').value;
+  const box = $('#order-suggestions-box');
+  if (!clientId || clientId === 'new') {
+    if (box) box.style.display = 'none';
+    return;
+  }
+  
+  google.script.run
+    .withSuccessHandler(list => {
+      renderOrderSuggestions(list || []);
+    })
+    .withFailureHandler(handleError)
+    .getSuggestions(clientId);
+}
+
+function renderOrderSuggestions(list) {
+  const box = $('#order-suggestions-box');
+  if (!box) return;
+  
+  box.innerHTML = '<datalist id="suggestions-list-order"></datalist>';
+  const datalist = $('#suggestions-list-order');
+  
+  if (!list.length) {
+    box.style.display = 'none';
+    return;
+  }
+  
+  box.style.display = 'block';
+  
+  const chipContainer = document.createElement('div');
+  chipContainer.className = 'chip-container';
+  
+  const title = document.createElement('div');
+  title.className = 'suggestions-title';
+  title.innerHTML = '<i data-lucide="sparkles" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Client Product Recommendations (click to add):';
+  chipContainer.appendChild(title);
+  
+  list.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s;
+    datalist.appendChild(opt);
+    
+    const chip = document.createElement('span');
+    chip.className = 'chip animate-scale-up';
+    chip.textContent = s;
+    chip.onclick = () => {
+      const rows = document.querySelectorAll('#order-items-container .item-row-four-cols');
+      let populated = false;
+      for (let i = 0; i < rows.length; i++) {
+        const nameVal = rows[i].querySelector('.item-name').value.trim();
+        if (!nameVal) {
+          rows[i].querySelector('.item-name').value = s;
+          populated = true;
+          break;
+        }
+      }
+      if (!populated) {
+        addOrderItemRow(s, 1, 0);
+      }
+    };
+    chipContainer.appendChild(chip);
+  });
+  
+  box.appendChild(chipContainer);
+  if (window.lucide) lucide.createIcons();
+}
+
+// Initialise items container and listeners
 document.addEventListener('DOMContentLoaded', () => {
   const container = $('#order-items-container');
   if (container) addOrderItemRow('', 1, 0);
+  
+  const clientSelect = $('#order-client');
+  if (clientSelect) {
+    clientSelect.addEventListener('change', () => {
+      loadOrderClientSuggestions();
+    });
+  }
 });
 </script>

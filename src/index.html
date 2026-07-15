@@ -401,7 +401,7 @@
             <h2 id="order-form-title"><i data-lucide="shopping-cart" style="color:var(--accent);"></i> Register New Order</h2>
             <form id="order-form" onsubmit="event.preventDefault(); saveOrderSubmit();">
               <input type="hidden" id="order-edit-id" value="">
-              <div class="grid-2">
+              <div class="grid-3">
                 <div class="field-group">
                   <label for="order-client">Select Client *</label>
                   <select id="order-client" required>
@@ -412,6 +412,15 @@
                   <label for="order-date">Order Date *</label>
                   <input id="order-date" type="date" required>
                 </div>
+                <div class="field-group">
+                  <label for="order-custom-id">Order Number (Optional)</label>
+                  <input type="text" id="order-custom-id" placeholder="e.g. SO-1002 (blank to auto-generate)">
+                </div>
+              </div>
+
+              <!-- Client suggestions sparkles panel -->
+              <div id="order-suggestions-box" class="card-sm-inset" style="display:none; margin-top: 1.25rem; padding: 0.75rem 1rem;">
+                <datalist id="suggestions-list-order"></datalist>
               </div>
 
               <h3 style="margin: 1.5rem 0 0.75rem; display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="list" style="width:16px;height:16px;"></i> Order Items</h3>
@@ -463,7 +472,7 @@
             <h2 id="invoice-form-title"><i data-lucide="file-plus-2" style="color:var(--accent);"></i> Create New Invoice</h2>
             <form id="invoice-form" onsubmit="event.preventDefault(); saveInvoiceSubmit();">
               <input type="hidden" id="invoice-edit-id" value="">
-              <div class="grid-2">
+              <div class="grid-3">
                 <div class="field-group">
                   <label for="invoice-client">Select Client *</label>
                   <select id="invoice-client" required>
@@ -474,6 +483,15 @@
                   <label for="invoice-date">Invoice Date *</label>
                   <input id="invoice-date" type="date" required>
                 </div>
+                <div class="field-group">
+                  <label for="invoice-custom-id">Invoice Number (Optional)</label>
+                  <input type="text" id="invoice-custom-id" placeholder="e.g. INV-2021 (blank to auto-generate)">
+                </div>
+              </div>
+
+              <!-- Client suggestions sparkles panel -->
+              <div id="invoice-suggestions-box" class="card-sm-inset" style="display:none; margin-top: 1.25rem; padding: 0.75rem 1rem;">
+                <datalist id="suggestions-list-invoice"></datalist>
               </div>
 
               <h3 style="margin: 1.5rem 0 0.75rem; display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="list" style="width:16px;height:16px;"></i> Invoice Items</h3>
