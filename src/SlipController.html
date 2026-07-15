@@ -1308,8 +1308,8 @@ function saveAddInvoiceNumber() {
     return;
   }
   if (addInvoiceNumberTag(v)) {
-        renderInvoiceNumberTags();
-        closeAddInvoiceNumberModal();
+    renderInvoiceNumberTags();
+    closeAddInvoiceNumberModal();
   } else {
     toast('That invoice number is already on this slip.', 'info');
   }
