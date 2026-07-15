@@ -13,9 +13,6 @@ The project has been organized into logical directories for clean file managemen
   * `ClientController.html` – Client directory actions (registration, display).
   * `SlipController.html` – Packing slip editor, visual print-preview, and filters.
   * `PdfGenerator.html` – High-quality PDF rendering engine using jsPDF.
-* **`assets/`**: Static resource files (not uploaded to Apps Script).
-  * `Bifro Logo.jpg` – High-res company logo image.
-  * `Packing Slip - Google Sheets.pdf` – Example output PDF layout.
 
 ---
 
