@@ -741,7 +741,7 @@ tr.table-row-animate:hover {
   display: grid;
   grid-template-columns: 3fr 1.2fr 1.2fr 45px;
   gap: 1rem;
-  align-items: flex-end;
+  align-items: start;
   margin-bottom: 0.75rem;
   position: relative;
 }
@@ -750,7 +750,7 @@ tr.table-row-animate:hover {
   display: grid;
   grid-template-columns: 3fr 1fr 1.2fr 45px;
   gap: 1rem;
-  align-items: flex-end;
+  align-items: start;
   margin-bottom: 0.75rem;
   position: relative;
 }
@@ -776,6 +776,7 @@ tr.table-row-animate:hover {
   display: flex;
   align-items: center;
   height: 40px; /* height of input */
+  margin-top: 23px; /* aligns with inputs on desktop when start aligned */
 }
 
 /* Suggestion Datalist Chips styling */
