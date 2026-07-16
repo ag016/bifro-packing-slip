@@ -839,31 +839,11 @@
                 </tbody>
               </table>
             </div>
-            <button type="button" class="btn btn-secondary-soft btn-sm btn-full" onclick="toggleLinkOrderCreateForm(true)">
-              <i data-lucide="plus"></i> Create Order on-the-fly
-            </button>
-          </div>
-
-          <!-- Create order inline form -->
-          <div id="link-order-create-section" style="display: none; border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
-            <h4 style="margin-top: 0;">Create New Order on-the-fly</h4>
-            <div class="field-group" style="margin-bottom: 0.75rem;">
-              <label for="link-order-date" class="label-inline">Order Date *</label>
-              <input type="date" id="link-order-date" style="width:100%;">
-            </div>
-            <div class="field-group" style="margin-bottom: 0.75rem;">
-              <label for="link-order-invoice-numbers" class="label-inline">Invoice Numbers (Optional, comma-separated)</label>
-              <input type="text" id="link-order-invoice-numbers" placeholder="e.g. INV-2025-001, INV-2025-002" style="width:100%;">
-              <p class="text-muted" style="font-size: 0.72rem; margin-top: 0.25rem;">Pre-populated from the packing slip's current invoice numbers so you can keep them in sync.</p>
-            </div>
-
-            <h5 style="margin: 1rem 0 0.5rem;">Order Items</h5>
-            <div id="link-order-items-container"></div>
-            <button type="button" class="btn btn-secondary-soft btn-xs" onclick="addLinkOrderItemRow('', 1)" style="margin-top: 0.5rem;">+ Add Item Row</button>
-
-            <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem; justify-content: flex-end;">
-              <button type="button" class="btn btn-secondary btn-sm" onclick="toggleLinkOrderCreateForm(false)">Back</button>
-              <button type="button" class="btn btn-primary btn-sm" onclick="saveLinkOrderOnTheFly()"><i data-lucide="save"></i> Save & Link Order</button>
+            <div class="card-sm-inset" style="margin-top: 1rem; display: flex; align-items: flex-start; gap: 0.5rem; border-color: var(--primary-soft); background: var(--primary-soft); padding: 0.75rem; border-radius: var(--radius-sm);">
+              <i data-lucide="info" style="color: var(--primary); flex-shrink: 0; width: 16px; height: 16px; margin-top: 2px;"></i>
+              <div style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
+                <strong>Order not listed?</strong> Close this modal and use the <strong>"Create Order"</strong> section below to register a new order, then link it here.
+              </div>
             </div>
           </div>
         </div>

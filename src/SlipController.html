@@ -1724,36 +1724,7 @@ function saveAddInvoiceNumber() {
   }
 }
 
-function toggleLinkOrderCreateForm(show) {
-  $('#link-order-list-section').style.display = show ? 'none' : 'block';
-  $('#link-order-create-section').style.display = show ? 'block' : 'none';
-  if (show) {
-    $('#link-order-date').valueAsDate = new Date();
-    $('#link-order-items-container').innerHTML = '';
-    addLinkOrderItemRow('', 1);
-    // Pre-fill the on-the-fly order invoice numbers with whatever's currently
-    // queued on the packing slip (so users can carry numbers across).
-    const tgtField = $('#link-order-invoice-numbers');
-    if (tgtField) tgtField.value = invoiceNumbers.join(', ');
-  }
-}
 
-// Inline rows creation inside modals
-function addLinkOrderItemRow(name, qty) {
-  const container = $('#link-order-items-container');
-  if (!container) return;
-  const row = document.createElement('div');
-  row.className = 'item-row card-sm-inset';
-  row.style.padding = '0.5rem';
-  row.style.marginBottom = '0.5rem';
-  row.innerHTML = `
-    <input type="text" class="item-name" placeholder="Item name..." value="${escapeHtml(name)}" style="flex:2; padding:0.25rem;" required>
-    <input type="number" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty}" style="flex:1; padding:0.25rem;" required>
-    <button type="button" class="btn-icon btn-danger-soft" onclick="this.closest('.item-row').remove()" style="padding:0.25rem;"><i data-lucide="trash-2" style="width:12px; height:12px;"></i></button>
-  `;
-  container.appendChild(row);
-  if (window.lucide) lucide.createIcons();
-}
 
 // Link commands
 function linkOrder(orderId) {
@@ -1855,62 +1826,7 @@ function unlinkOrder(orderId) {
   refreshLinkedStats();
 }
 
-// On-the-fly saver
-function saveLinkOrderOnTheFly() {
-  const clientId = $('#slip-client').value;
-  const date = $('#link-order-date').value;
 
-  if (!clientId || clientId === 'new') return;
-  const clientObj = clients.find(c => c.id === clientId);
-  if (!clientObj) return;
-
-  const rows = $$('#link-order-create-section .item-row');
-  const items = [];
-  let valid = true;
-
-  rows.forEach((row, idx) => {
-    const name = row.querySelector('.item-name').value.trim();
-    const qty = parseInt(row.querySelector('.item-qty').value, 10);
-    if (!name) {
-      toast(`Row ${idx + 1}: Description is required.`, 'danger');
-      valid = false;
-      return;
-    }
-    if (isNaN(qty) || qty <= 0) {
-      toast(`Row ${idx + 1}: Quantity must be a valid positive integer.`, 'danger');
-      valid = false;
-      return;
-    }
-    items.push({ name, quantity: qty });
-  });
-
-  if (!valid) return;
-
-  const invField = $('#link-order-invoice-numbers');
-  const invRaw = invField ? invField.value : '';
-  const invList = String(invRaw || '').split(',').map(s => s.trim()).filter(Boolean);
-  const seen = {};
-  const dedup = [];
-  invList.forEach(v => { if (v && !seen[v]) { seen[v] = true; dedup.push(v); } });
-
-  const order = {
-    date: date || new Date().toISOString().substring(0, 10),
-    clientId: clientId,
-    clientName: clientObj.name,
-    items: items,
-    status: 'Pending',
-    invoiceNumbers: dedup,
-    invoiceNumbersRaw: invRaw
-  };
-
-  google.script.run
-    .withSuccessHandler(saved => {
-      toast('Order created and linked: ' + saved.id, 'success');
-      linkOrder(saved.id);
-    })
-    .withFailureHandler(handleError)
-    .saveOrder(order);
-}
 
 /* ------------------------------------------------------------------
  * Save New Client (independent of slip save)
