@@ -114,7 +114,7 @@ function saveNewOrderClient() {
         try {
           if (!saved || !saved.id) { toast('Save failed.', 'danger'); restore(); return; }
           clients.push(saved);
-          populateOrderClientSelect(saved.id);
+          if (typeof populateClientSelect === 'function') populateClientSelect();
           const sel = $('#order-client');
           if (sel) sel.value = saved.id;
           const fields = $('#new-order-client-fields');
