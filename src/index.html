@@ -555,48 +555,23 @@
                 </div>
               </div>
 
-              <!-- Linked Orders strip -->
+              <!-- Quick Order Number — auto-creates on save if it's new; auto-fills when linking -->
               <div class="field-group" style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
+                <label for="slip-order-number">Order Number</label>
+                <input id="slip-order-number" type="text" placeholder="Type a new number to auto-create on save; auto-fills when you Link an Order">
+                <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.35rem;">Order numbers typed here auto-create a new Order (using this slip's items) when you Save Packing Slip, unless they're already linked. Use the row's <em>Ordered</em> column to leave leftovers for the next slip.</p>
+              </div>
+
+              <!-- Linked Orders strip -->
+              <div class="field-group" style="margin-top: 1rem;">
                 <label style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                   <span>Linked Orders</span>
-                  <span style="display:flex; gap:0.35rem;">
-                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="openLinkOrderModal()" style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">+ Link Order</button>
-                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="toggleCreateOrderFromSlip()" style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">+ New Order</button>
-                  </span>
+                  <button type="button" class="btn btn-secondary-soft btn-xs" onclick="openLinkOrderModal()" style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">+ Link Order</button>
                 </label>
                 <div id="linked-orders-tags" class="link-tag-container">
                   <span class="text-muted" style="font-size:0.85rem; font-style:italic;">No orders linked</span>
                 </div>
                 <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.35rem;">Invoice numbers on this slip sync into any linked order's invoice numbers automatically.</p>
-              </div>
-
-              <!-- Inline mini-form: create a new order from this slip (auto-linked) -->
-              <div id="create-order-fields" class="card-sm-inset animate-fade-in" style="display:none; margin-top: 0.85rem;">
-                <h3 style="margin-top:0.25rem;"><i data-lucide="shopping-cart" style="width:18px;height:18px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Quick Order (auto-link to this slip)</h3>
-                <div class="grid-3">
-                  <div class="field-group">
-                    <label for="new-order-custom-id" class="label-inline">Order # <span class="text-muted" style="font-weight:400; text-transform:none; letter-spacing:0;">(auto if blank)</span></label>
-                    <input id="new-order-custom-id" type="text" placeholder="e.g. OR-2025-0001">
-                  </div>
-                  <div class="field-group">
-                    <label for="new-order-date" class="label-inline">Order Date</label>
-                    <input id="new-order-date" type="date">
-                  </div>
-                  <div class="field-group">
-                    <label for="new-order-invoices" class="label-inline">Invoice # <span class="text-muted" style="font-weight:400; text-transform:none; letter-spacing:0;">(auto from slip)</span></label>
-                    <input id="new-order-invoices" type="text" placeholder="comma-separated invoice numbers">
-                  </div>
-                </div>
-                <h4 style="margin-top: 0.85rem; margin-bottom: 0.4rem; font-size: 0.95rem;">Items</h4>
-                <div id="new-order-items-container"></div>
-                <button type="button" class="btn btn-secondary-soft btn-xs" onclick="addNewOrderItemRow('', 1, 1)" style="margin-top: 0.5rem;">+ Add Item Row</button>
-                <div style="margin-top: 0.85rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
-                  <button type="button" class="btn btn-primary btn-sm" id="btn-create-order-submit" onclick="submitCreateOrderFromSlip()">
-                    <i data-lucide="save"></i> Save & Link Order
-                  </button>
-                  <button type="button" class="btn btn-secondary btn-sm" onclick="toggleCreateOrderFromSlip()">Cancel</button>
-                  <span class="text-muted" style="font-size: 0.78rem; align-self: center;">Descriptions stay on the slip only \u2014 they aren't copied onto the order.</span>
-                </div>
               </div>
 
               <h2 style="margin: 2rem 0 1rem;"><i data-lucide="list" style="color:var(--accent);"></i> Package Contents</h2>

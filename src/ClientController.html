@@ -185,37 +185,32 @@ function toggleNewClient() {
   const div = $('#new-client-fields');
   if (!div) return;
   const selectVal = $('#slip-client').value;
-  
+
+  // Inline new-client panel only shows when the user picks "+ Add new client".
+  // Selecting an existing client hides the panel so it can't masquerade as an
+  // edit form for the chosen client.
   if (selectVal === 'new') {
     div.style.display = 'block';
-    $('#new-client-name').required = true;
-    $('#new-client-name').value = '';
-    $('#new-client-company').value = '';
-    $('#new-client-phone').value = '';
-    $('#new-client-address').value = '';
-    // Visual cue: scroll to and highlight the new client fields
-    setTimeout(() => {
-      div.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      highlightElement(div);
-      $('#new-client-name').focus();
+    if ($('#new-client-name')) $('#new-client-name').required = true;
+    // Always start blank so the user fills in the new client's details.
+    if ($('#new-client-name')) $('#new-client-name').value = '';
+    if ($('#new-client-company')) $('#new-client-company').value = '';
+    if ($('#new-client-phone')) $('#new-client-phone').value = '';
+    if ($('#new-client-address')) $('#new-client-address').value = '';
+    setTimeout(function () {
+      try { div.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+      try { highlightElement(div); } catch (e) {}
+      const nm = $('#new-client-name');
+      if (nm) nm.focus();
     }, 50);
-  } else if (selectVal) {
-    div.style.display = 'block';
-    $('#new-client-name').required = true;
-    const c = clients.find(x => x.id === selectVal);
-    if (c) {
-      $('#new-client-name').value = c.name || '';
-      $('#new-client-company').value = c.company || '';
-      $('#new-client-phone').value = c.phone || '';
-      $('#new-client-address').value = c.address || '';
-    }
   } else {
+    // Any other selection (existing client id or empty) hides the inline panel.
     div.style.display = 'none';
-    $('#new-client-name').required = false;
-    $('#new-client-name').value = '';
-    $('#new-client-company').value = '';
-    $('#new-client-phone').value = '';
-    $('#new-client-address').value = '';
+    if ($('#new-client-name')) $('#new-client-name').required = false;
+    if ($('#new-client-name')) $('#new-client-name').value = '';
+    if ($('#new-client-company')) $('#new-client-company').value = '';
+    if ($('#new-client-phone')) $('#new-client-phone').value = '';
+    if ($('#new-client-address')) $('#new-client-address').value = '';
   }
 }
 </script>

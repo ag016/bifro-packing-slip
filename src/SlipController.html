@@ -4,7 +4,7 @@
  * Form management, item grids, searching, filtering, and previewing
  */
 
-function addItemRow(name, qty, scrollToRow, orderId, description) {
+function addItemRow(name, qty, scrollToRow, orderId, description, ordered) {
   const container = $('#items-container');
   if (!container) return;
 
@@ -15,6 +15,12 @@ function addItemRow(name, qty, scrollToRow, orderId, description) {
   // Use unique timestamp to coordinate names and labels
   const id = 'item-' + Date.now() + '-' + Math.floor(Math.random()*1000);
 
+  // Render `ordered` only when caller provides a positive integer; otherwise
+  // leave the field blank so the user can choose to specify leftovers.
+  var orderedAttr = (ordered === 0 || (ordered !== undefined && ordered !== null && ordered !== '' && !isNaN(ordered) && Number(ordered) >= 0))
+    ? ' value="' + escapeHtml(String(ordered)) + '"'
+    : '';
+
   row.innerHTML = `
     <div class="field-group flex-3">
       <label for="${id}-name" class="label-inline">Product Name</label>
@@ -22,6 +28,10 @@ function addItemRow(name, qty, scrollToRow, orderId, description) {
       <label for="${id}-desc" class="label-inline" style="margin-top: 0.35rem;">Description (optional)</label>
       <input type="text" id="${id}-desc" class="item-description" placeholder="e.g. 20x30 inch, polyester, color..." value="${escapeHtml(description || '')}">
       <div id="${id}-balance-container" class="item-balance-hint"></div>
+    </div>
+    <div class="field-group flex-1">
+      <label for="${id}-ordered" class="label-inline">Ordered <span class="text-muted" style="font-weight:400; text-transform:none; letter-spacing:0;">(optional)</span></label>
+      <input type="number" id="${id}-ordered" class="item-ordered" placeholder="—" min="0" step="1"${orderedAttr} title="Ordered quantity on the linked Order. Leave blank to use Dispatched qty.">
     </div>
     <div class="field-group flex-1">
       <label for="${id}-qty" class="label-inline">Dispatched Qty</label>
@@ -188,7 +198,15 @@ function gatherItems() {
     const orderId = row.dataset.orderId || '';
     const descEl = row.querySelector('.item-description');
     const description = descEl ? String(descEl.value || '').trim() : '';
-    items.push({ name, quantity, orderId, description });
+    // Optional per-row ordered input. Empty / blank means "use Dispatched
+    // qty as the ordered amount" when the slip auto-creates an order on save.
+    const orderedEl = row.querySelector('.item-ordered');
+    let ordered = '';
+    if (orderedEl && orderedEl.value !== '' && orderedEl.value !== null && orderedEl.value !== undefined) {
+      const n = Number(orderedEl.value);
+      if (Number.isFinite(n) && n >= 0) ordered = n;
+    }
+    items.push({ name, quantity, orderId, description, ordered });
   });
 
   // Remove blank rows from the DOM
@@ -235,18 +253,38 @@ function savePackingSlip() {
     return;
   }
 
-  const client = {
-    id: clientId === 'new' ? '' : clientId,
-    name: $('#new-client-name').value.trim(),
-    company: $('#new-client-company').value.trim(),
-    phone: $('#new-client-phone').value.trim(),
-    address: $('#new-client-address').value.trim()
-  };
-
-  if (!client.name) {
-    toast('Please fill in client name under Client Details', 'danger');
-    $('#new-client-name').focus();
-    return;
+  // Pull client details from the cache when the user has picked an existing
+  // client; only read from inline fields when they're actively adding a new
+  // one ("+ Add new client"). This avoids the bug where an existing-client
+  // selection saved with empty inline inputs failed with "Please fill in
+  // client name under Client Details".
+  let client;
+  if (clientId === 'new') {
+    client = {
+      id: '',
+      name: $('#new-client-name').value.trim(),
+      company: $('#new-client-company').value.trim(),
+      phone: $('#new-client-phone').value.trim(),
+      address: $('#new-client-address').value.trim()
+    };
+    if (!client.name) {
+      toast('Please fill in client name under Client Details', 'danger');
+      $('#new-client-name').focus();
+      return;
+    }
+  } else {
+    const cached = clients.find(c => c.id === clientId);
+    if (!cached) {
+      toast('Selected client not found in cache. Please refresh the page.', 'danger');
+      return;
+    }
+    client = {
+      id: cached.id,
+      name: cached.name || '',
+      company: cached.company || '',
+      phone: cached.phone || '',
+      address: cached.address || ''
+    };
   }
 
   const items = gatherItems();
@@ -270,7 +308,7 @@ function savePackingSlip() {
     notes: slipNotes,
     invoiceNumber: merged.join(', '),
     invoiceNumbers: merged,
-    linkedOrders: linkedOrderIds,
+    linkedOrders: linkedOrderIds.slice(),
     linkedInvoices: merged.join(', ')
   };
 
@@ -278,33 +316,93 @@ function savePackingSlip() {
     slip.slipCode = currentSlip.slipCode;
   }
 
-  // Disable button to prevent double clicks
-  const saveBtn = $('#btn-save-slip');
-  if (saveBtn) {
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = '<span class="spinner"></span> Saving...';
-  }
+  // Read Order Number field — auto-create an Order if the value is fresh
+  // (not already in linkedOrderIds). Replaces linkedOrderIds so the typed #
+  // becomes the canonical link.
+  const orderNumField = $('#slip-order-number');
+  const orderNum = orderNumField ? String(orderNumField.value || '').trim() : '';
+  const shouldCreateOrder = orderNum && linkedOrderIds.indexOf(orderNum) === -1;
+
+  const restore = _setButtonBusy($('#btn-save-slip'), 'Saving...');
 
   // Always save/update client in backend first to keep client directory updated
   google.script.run
     .withSuccessHandler(savedClient => {
-      slip.clientId = savedClient.id;
-      // Also update the local 'clients' array so the dropdown matches immediately
-      const idx = clients.findIndex(c => c.id === savedClient.id);
-      if (idx !== -1) {
-        clients[idx] = savedClient;
-      } else {
-        clients.push(savedClient);
+      try {
+        slip.clientId = savedClient.id;
+        // Also update the local 'clients' array so the dropdown matches immediately
+        const idx = clients.findIndex(c => c.id === savedClient.id);
+        if (idx !== -1) {
+          clients[idx] = savedClient;
+        } else {
+          clients.push(savedClient);
+        }
+        populateClientSelect(savedClient.id);
+
+        // If a fresh Order # was typed, create the order FIRST so we can
+        // link the slip to it. The order's items are pulled from the slip's
+        // items — ordered = the per-row "Ordered" column (falling back to
+        // Dispatched), shipped = Dispatched, descriptions intentionally empty
+        // (descriptions stay on the slip only).
+        const proceedToSaveSlip = function () { doSaveSlip(slip); };
+
+        if (shouldCreateOrder) {
+          // The freshly-typed Order # is the canonical link. Drop any prior
+          // links from `linkedOrderIds` (and from each row's data-order-id)
+          // so the saved slip reflects exactly the new order.
+          linkedOrderIds.length = 0;
+          items.forEach(function (it) { it.orderId = ''; });
+          const rows = document.querySelectorAll('#items-container .item-row');
+          rows.forEach(function (row) { row.dataset.orderId = ''; });
+
+          const orderObj = {
+            date: slip.date,
+            clientId: savedClient.id,
+            clientName: client.name || savedClient.name || '',
+            items: items.map(function (it) {
+              return {
+                name: it.name,
+                quantity: Number(it.ordered || it.quantity || 0),
+                shipped: Number(it.quantity || 0),
+                description: ''
+              };
+            }),
+            status: 'Pending',
+            invoiceNumbers: merged.slice(),
+            invoiceNumbersRaw: merged.join(', '),
+            customId: orderNum
+          };
+          google.script.run
+            .withSuccessHandler(function (savedOrder) {
+              try {
+                if (savedOrder && savedOrder.id) {
+                  linkedOrderIds.push(savedOrder.id);
+                  slip.linkedOrders = linkedOrderIds.slice();
+                  renderLinkedTags();
+                }
+                proceedToSaveSlip();
+              } catch (e) {
+                restore();
+                handleError(e);
+              }
+            })
+            .withFailureHandler(function (err) {
+              restore();
+              handleError(err);
+            })
+            .saveOrder(orderObj);
+        } else {
+          // No new order to create; proceed straight to the slip save.
+          proceedToSaveSlip();
+        }
+      } catch (e) {
+        restore();
+        handleError(e);
       }
-      populateClientSelect(savedClient.id);
-      doSaveSlip(slip);
     })
     .withFailureHandler(err => {
+      restore();
       handleError(err);
-      if (saveBtn) {
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = 'Save Packing Slip';
-      }
     })
     .saveClient(client);
 }
@@ -432,7 +530,7 @@ function printSlipByCode(slipCode, anchorEl) {
 function resetSlipForm() {
   $('#slip-form').reset();
   $('#items-container').innerHTML = '';
-  addItemRow('', 1, false);
+  addItemRow('', 1, false, '', '', '');
   toggleNewClient();
   currentSlip = null;
 
@@ -444,6 +542,8 @@ function resetSlipForm() {
   renderInvoiceNumberTags();
   const quick = $('#slip-invoice-quick');
   if (quick) quick.value = '';
+  const orderNumField = $('#slip-order-number');
+  if (orderNumField) orderNumField.value = '';
 
   const printBtn = $('#btn-print-slip');
   if (printBtn) printBtn.style.display = 'none';
@@ -491,6 +591,12 @@ function loadSlipForEdit(slipCode) {
 
   // Linked Orders
   linkedOrderIds = (slip.linkedOrders || '').split(',').map(s => s.trim()).filter(Boolean);
+  const orderNumField = $('#slip-order-number');
+  if (orderNumField) {
+    // Show the first linked order's id (canonical link) so the field mirrors
+    // what was saved last. If none, clear it.
+    orderNumField.value = linkedOrderIds[0] || '';
+  }
 
   // Free-floating invoice numbers
   invoiceNumbers = hydrateInvoiceNumbersFromSlip(slip);
@@ -502,9 +608,9 @@ function loadSlipForEdit(slipCode) {
   refreshLinkedStats(() => {
     $('#items-container').innerHTML = '';
     if (slip.items && slip.items.length) {
-      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId, it.description));
+      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId, it.description, (it.ordered !== undefined ? it.ordered : '')));
     } else {
-      addItemRow('', 1, false);
+      addItemRow('', 1, false, '', '', '');
     }
   });
 
@@ -541,6 +647,12 @@ function duplicateSlipByCode(slipCode) {
 
   // Linked Orders
   linkedOrderIds = (slip.linkedOrders || '').split(',').map(s => s.trim()).filter(Boolean);
+  const orderNumField = $('#slip-order-number');
+  if (orderNumField) {
+    // Duplicates carry the same links as the source so the user can ship
+    // any leftovers straight away against the original orders.
+    orderNumField.value = linkedOrderIds[0] || '';
+  }
 
   invoiceNumbers = hydrateInvoiceNumbersFromSlip(slip);
   renderLinkedTags();
@@ -551,9 +663,9 @@ function duplicateSlipByCode(slipCode) {
   refreshLinkedStats(() => {
     $('#items-container').innerHTML = '';
     if (slip.items && slip.items.length) {
-      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId, it.description));
+      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId, it.description, (it.ordered !== undefined ? it.ordered : '')));
     } else {
-      addItemRow('', 1, false);
+      addItemRow('', 1, false, '', '', '');
     }
   });
 
@@ -1604,6 +1716,12 @@ function linkOrder(orderId) {
   if (linkedOrderIds.indexOf(orderId) !== -1) return;
   linkedOrderIds.push(orderId);
   renderLinkedTags();
+  // Mirror the linked order's id into the Order Number field on the form
+  // when it's currently blank, so the slip carries the link visibly.
+  const orderNumField = $('#slip-order-number');
+  if (orderNumField && !orderNumField.value.trim()) {
+    orderNumField.value = orderId;
+  }
 
   // Pull items of the linked order
   google.script.run
@@ -1665,6 +1783,17 @@ function linkOrder(orderId) {
 function unlinkOrder(orderId) {
   linkedOrderIds = linkedOrderIds.filter(id => id !== orderId);
   renderLinkedTags();
+
+  // Sync Order Number field: if it was showing the unlinked id (or empty),
+  // reset it to the next linked order's id. Don't clobber a manually typed
+  // value the user might want to keep.
+  const orderNumField = $('#slip-order-number');
+  if (orderNumField) {
+    const current = orderNumField.value.trim();
+    if (!current || current === orderId) {
+      orderNumField.value = linkedOrderIds[0] || '';
+    }
+  }
 
   // Remove items in items-container belonging to this orderId
   const rows = $$('#items-container .item-row');
@@ -1806,169 +1935,4 @@ function saveNewSlipClient() {
   }
 }
 
-/* ------------------------------------------------------------------
- * Inline Create Order from Slip form
- *
- * Lets the user stub an order directly from the slip form so future slips
- * for the same client can be auto-linked against it (carrying over any
- * leftover Ordered vs Dispatched amounts). Descriptions from the slip are
- * intentionally NOT propagated onto the order — descriptions stay on the
- * slip only.
- * ------------------------------------------------------------------ */
-
-function _prefillNewOrderFromSlip() {
-  // Order date defaults to today, invoice numbers defaults to the slip's
-  // invoice numbers, items pre-populate from the current slip's items.
-  const dateEl = $('#new-order-date');
-  if (dateEl && !dateEl.value) {
-    try { dateEl.valueAsDate = new Date(); } catch (e) {
-      dateEl.value = new Date().toISOString().substring(0, 10);
-    }
-  }
-  const invEl = $('#new-order-invoices');
-  if (invEl && !invEl.value && Array.isArray(invoiceNumbers)) {
-    invEl.value = invoiceNumbers.join(', ');
-  }
-  const container = $('#new-order-items-container');
-  if (container && !container.children.length) {
-    let items = [];
-    if (currentSlip && Array.isArray(currentSlip.items) && currentSlip.items.length) {
-      items = currentSlip.items;
-    } else {
-      const rows = $$('#items-container .item-row');
-      items = rows.map(function (row) {
-        const name = row.querySelector('.item-name');
-        const qty = row.querySelector('.item-qty');
-        return {
-          name: name && name.value ? name.value : '',
-          quantity: qty && qty.value ? parseInt(qty.value, 10) : 1
-        };
-      }).filter(function (it) { return it && it.name; });
-    }
-    items.forEach(function (it) {
-      addNewOrderItemRow(it.name || '', Number(it.quantity || 1), Number(it.quantity || 1));
-    });
-    if (!items.length) addNewOrderItemRow('', 1, 1);
-  }
-}
-
-function toggleCreateOrderFromSlip() {
-  const fields = $('#create-order-fields');
-  if (!fields) return;
-  if (fields.style.display === 'none' || !fields.style.display) {
-    _prefillNewOrderFromSlip();
-    fields.style.display = '';
-  } else {
-    fields.style.display = 'none';
-  }
-}
-
-function addNewOrderItemRow(name, orderedQty, dispatchedQty) {
-  const container = $('#new-order-items-container');
-  if (!container) return;
-  const row = document.createElement('div');
-  row.className = 'item-row card-sm-inset';
-  row.style.padding = '0.5rem';
-  row.style.marginBottom = '0.5rem';
-  row.style.display = 'flex';
-  row.style.gap = '0.4rem';
-  row.style.alignItems = 'center';
-  row.style.flexWrap = 'wrap';
-  row.innerHTML = `
-    <input type="text" class="item-name" placeholder="Item name..." value="${escapeHtml(name || '')}" style="flex:2; padding:0.4rem; min-width:160px;" required>
-    <input type="number" class="item-ordered" placeholder="Ordered" min="0" step="1" value="${Number(orderedQty || 0) || 0}" style="flex:1; padding:0.4rem; max-width:100px;" title="Ordered quantity on this order">
-    <input type="number" class="item-dispatched" placeholder="Dispatched" min="0" step="1" value="${Number(dispatchedQty || 0) || 0}" style="flex:1; padding:0.4rem; max-width:100px;" title="Dispatched quantity on this slip">
-    <button type="button" class="btn btn-danger-soft btn-xs" onclick="this.closest('.item-row').remove()" title="Remove Row">×</button>
-  `;
-  container.appendChild(row);
-}
-
-function submitCreateOrderFromSlip() {
-  const clientId = $('#slip-client').value;
-  if (!clientId || clientId === 'new') {
-    toast('Please select a registered client first.', 'warning');
-    return;
-  }
-  const clientObj = clients.find(function (c) { return c.id === clientId; });
-  if (!clientObj) { toast('Selected client not found in cache.', 'danger'); return; }
-
-  const rows = $$('#new-order-items-container .item-row');
-  if (!rows.length) {
-    toast('Add at least one item row to the order.', 'warning');
-    return;
-  }
-  const items = [];
-  let valid = true;
-  rows.forEach(function (row, idx) {
-    const nameEl = row.querySelector('.item-name');
-    const orderedEl = row.querySelector('.item-ordered');
-    const dispatchedEl = row.querySelector('.item-dispatched');
-    const name = nameEl ? String(nameEl.value || '').trim() : '';
-    const ordered = orderedEl ? parseInt(orderedEl.value, 10) : NaN;
-    const dispatched = dispatchedEl ? parseInt(dispatchedEl.value, 10) : NaN;
-    if (!name) { toast('Row ' + (idx + 1) + ': name is required.', 'danger'); valid = false; return; }
-    if (isNaN(ordered) || ordered < 0) { toast('Row ' + (idx + 1) + ': ordered quantity must be a non-negative integer.', 'danger'); valid = false; return; }
-    if (isNaN(dispatched) || dispatched < 0) { toast('Row ' + (idx + 1) + ': dispatched quantity must be a non-negative integer.', 'danger'); valid = false; return; }
-    if (dispatched > ordered) { toast('Row ' + (idx + 1) + ': dispatched (' + dispatched + ') cannot exceed ordered (' + ordered + ').', 'danger'); valid = false; return; }
-    // Description intentionally NOT copied from slip — descriptions stay on the slip only.
-    items.push({
-      name: name,
-      quantity: ordered,
-      shipped: dispatched,
-      description: ''
-    });
-  });
-  if (!valid) return;
-
-  const dateEl = $('#new-order-date');
-  const orderDate = (dateEl && dateEl.value) ? dateEl.value : new Date().toISOString().substring(0, 10);
-
-  const invEl = $('#new-order-invoices');
-  const invRaw = invEl ? String(invEl.value || '') : '';
-  const invList = invRaw.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-  const seen = {};
-  const dedup = [];
-  invList.forEach(function (v) { if (v && !seen[v]) { seen[v] = true; dedup.push(v); } });
-
-  const customIdEl = $('#new-order-custom-id');
-  const customId = (customIdEl && customIdEl.value.trim()) ? String(customIdEl.value).trim() : '';
-
-  const order = {
-    date: orderDate,
-    clientId: clientId,
-    clientName: clientObj.name,
-    items: items,
-    status: 'Pending',
-    invoiceNumbers: dedup,
-    invoiceNumbersRaw: invRaw
-  };
-  if (customId) order.customId = customId;
-
-  const btn = $('#btn-create-order-submit');
-  const restore = _setButtonBusy(btn, 'Saving...');
-
-  google.script.run
-    .withSuccessHandler(function (saved) {
-      try {
-        if (!saved || !saved.id) { toast('Order save failed (no id returned).', 'danger'); return; }
-        // Refresh local orders cache so subsequent selectors see the new order.
-        try {
-          if (Array.isArray(orders)) orders.push(saved);
-        } catch (e) {}
-        toast('Order created and linked: ' + saved.id, 'success');
-        linkOrder(saved.id);
-        // Reset the inline form fields but keep the panel open so the user
-        // can create another order if needed.
-        const container = $('#new-order-items-container');
-        if (container) container.innerHTML = '';
-        if (customIdEl) customIdEl.value = '';
-        if (invEl) invEl.value = '';
-      } finally { restore(); }
-    })
-    .withFailureHandler(function (err) {
-      handleError(err);
-      restore();
-    })
-    .saveOrder(order);
-}
 </script>
