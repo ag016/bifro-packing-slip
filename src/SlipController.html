@@ -25,7 +25,7 @@ function addItemRow(name, qty, scrollToRow, orderId, description, ordered) {
     <div class="field-group flex-3">
       <label for="${id}-name" class="label-inline">Product Name</label>
       <input type="text" id="${id}-name" class="item-name" placeholder="Start typing product name..." value="${escapeHtml(name || '')}" list="suggestions-list" oninput="updateRowBalanceHint('${id}')" required>
-      <label for="${id}-desc" class="label-inline" style="margin-top: 0.35rem;">Description (optional)</label>
+      <label for="${id}-desc" class="label-inline" style="margin-top: 0.35rem;">Packing Description (optional)</label>
       <input type="text" id="${id}-desc" class="item-description" placeholder="e.g. 20x30 inch, polyester, color..." value="${escapeHtml(description || '')}">
       <div id="${id}-balance-container" class="item-balance-hint"></div>
     </div>
@@ -1154,7 +1154,7 @@ function viewSlipByCode(slipCode) {
             <tr>
               <th class="text-center" style="width: 36px;">#</th>
               <th>Product Name</th>
-              <th>Description</th>
+              <th>Packing Description</th>
               <th class="text-center" style="width: 86px;">Ordered</th>
               <th class="text-center" style="width: 96px;">Previously Dispatched</th>
               <th class="text-center" style="width: 86px;">Dispatched</th>

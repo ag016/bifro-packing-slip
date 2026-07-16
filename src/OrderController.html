@@ -190,7 +190,7 @@ function addOrderItemRow(name, qty, shipped, description) {
     <div class="field-group flex-2">
       <label for="${id}-name" class="label-inline">Product Name</label>
       <input type="text" id="${id}-name" class="item-name" placeholder="Item name..." value="${escapeHtml(name || '')}" list="suggestions-list-order" required>
-      <label for="${id}-desc" class="label-inline" style="margin-top: 0.35rem;">Description (optional)</label>
+      <label for="${id}-desc" class="label-inline" style="margin-top: 0.35rem;">Product Description (optional)</label>
       <input type="text" id="${id}-desc" class="item-description" placeholder="e.g. 20x30 inch, polyester, color..." value="${escapeHtml(description || '')}">
     </div>
     <div class="field-group flex-1">
