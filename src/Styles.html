@@ -1251,7 +1251,7 @@ tr.table-row-animate:hover {
   padding: 0.65rem 0.85rem;
   border-bottom: 1px solid var(--border);
   font-size: 0.88rem;
-  word-break: break-word;
+  word-break: normal;
   white-space: normal;
 }
 
@@ -1261,6 +1261,11 @@ tr.table-row-animate:hover {
   font-weight: 700;
   text-transform: none;
   letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.preview-name-cell, .preview-desc-cell {
+  word-break: break-word;
 }
 
 .preview-table tfoot td {
