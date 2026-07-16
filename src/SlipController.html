@@ -1600,27 +1600,27 @@ function updateRowBalanceHint(id) {
 
 // Modal links controllers
 function openLinkOrderModal() {
-  const clientId = $('#slip-client').value;
+  $('#link-order-modal').classList.add('active');
+
+  const clientId = $('#slip-client') ? $('#slip-client').value : '';
+  const tbody = $('#link-order-table tbody');
+  if (!tbody) return;
+
   if (!clientId || clientId === 'new') {
-    toast('Please select a registered client first.', 'warning');
+    tbody.innerHTML = '<tr><td colspan="4" class="empty" style="text-align: center; padding: 1rem;">Select a client on the form first.</td></tr>';
     return;
   }
 
-  $('#link-order-modal').classList.add('active');
-  toggleLinkOrderCreateForm(false);
-
-  // List client's orders
-  const tbody = $('#link-order-table tbody');
-  tbody.innerHTML = '<tr><td colspan="4" class="empty">Loading orders...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="4" class="empty" style="text-align: center; padding: 1rem;">Loading orders...</td></tr>';
 
   google.script.run
     .withSuccessHandler(list => {
       orders = list || [];
-      const clientOrders = orders.filter(o => o.clientId === clientId && linkedOrderIds.indexOf(o.id) === -1);
+      const clientOrders = orders.filter(o => String(o.clientId).trim() === String(clientId).trim() && linkedOrderIds.indexOf(o.id) === -1);
 
       tbody.innerHTML = '';
       if (!clientOrders.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="empty">No unlinked orders found for this client.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="empty" style="text-align: center; padding: 1rem;">No unlinked orders found for this client.</td></tr>';
         return;
       }
 
