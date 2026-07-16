@@ -201,7 +201,12 @@ function renderOrders() {
       <td><span class="badge badge-accent order-id-badge cursor-pointer" onclick="viewOrderById('${escapeHtml(o.id || '')}')" title="Click to view details: ${escapeHtml(o.id || '')}">${escapeHtml(o.id || '')}</span></td>
       <td><strong>${formatDate(o.date)}</strong></td>
       <td>${escapeHtml(o.clientName || '')}</td>
-      <td class="text-center"><strong>${ordered}</strong> <span class="text-muted" style="font-size:0.75rem;">(${items.length} items)</span></td>
+      <td class="text-center">
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+          <strong>${ordered}</strong>
+          <span class="text-muted" style="font-size:0.75rem; white-space: nowrap; margin-top: 2px;">${items.length} ${items.length === 1 ? 'item' : 'items'}</span>
+        </div>
+      </td>
       <td class="text-center"><strong>${dispatched}</strong></td>
       <td class="text-center">${remainingBadge}</td>
       <td><span class="badge ${statusClass}">${escapeHtml(o.status || 'Pending')}</span></td>
