@@ -36,27 +36,40 @@ function doLoadOrders(callback) {
     .withSuccessHandler(list => {
       orders = list || [];
       renderOrders();
-      populateOrderClientSelect();
+      if (typeof populateClientSelect === 'function') populateClientSelect();
+      populateOrderFilterClient();
       if (typeof callback === 'function') callback();
     })
     .withFailureHandler(handleError)
     .getOrders();
 }
 
-function populateOrderClientSelect() {
-  const sel = $('#order-client');
+function populateOrderFilterClient() {
+  const sel = $('#order-filter-client');
   if (!sel) return;
   const current = sel.value;
-  sel.innerHTML = '<option value="">-- Choose Client --</option>' +
-    '<option value="new">+ Add new client</option>';
-
+  sel.innerHTML = '<option value="">All clients</option>';
   clients.forEach(c => {
     const opt = document.createElement('option');
     opt.value = c.id;
-    opt.textContent = `${c.name} ${c.company ? ' - ' + c.company : ''} [${c.id}]`;
+    opt.textContent = `${c.name} [${c.id}]`;
     sel.appendChild(opt);
   });
   sel.value = current;
+}
+
+function toggleOrderFiltersDropdown() {
+  const tray = $('#order-filters-tray');
+  const btn = $('#btn-toggle-order-filters');
+  if (!tray || !btn) return;
+  const isHidden = tray.style.display === 'none';
+  if (isHidden) {
+    tray.style.display = 'grid';
+    btn.classList.add('active');
+  } else {
+    tray.style.display = 'none';
+    btn.classList.remove('active');
+  }
 }
 
 /* ------------------------------------------------------------------
@@ -123,12 +136,48 @@ function renderOrders() {
   if (!tbody) return;
   tbody.innerHTML = '';
 
-  if (!orders.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">No orders found. Add an order details above to start.</td></tr>';
+  const term = $('#order-filter-search') ? $('#order-filter-search').value.toLowerCase().trim() : '';
+  const clientFilter = $('#order-filter-client') ? $('#order-filter-client').value : '';
+  const from = $('#order-filter-from') ? $('#order-filter-from').value : '';
+  const to = $('#order-filter-to') ? $('#order-filter-to').value : '';
+  const statusFilter = $('#order-filter-status') ? $('#order-filter-status').value : '';
+
+  let filtered = orders.slice().reverse();
+
+  if (term) {
+    filtered = filtered.filter(o => {
+      const itemNames = (o.items || []).map(it => String(it.name || '')).join(' ');
+      const itemDescs = (o.items || []).map(it => String(it.description || '')).join(' ');
+      const searchable = [
+        o.id,
+        o.clientName,
+        o.status,
+        itemNames,
+        itemDescs
+      ].join(' ').toLowerCase();
+      return searchable.indexOf(term) !== -1;
+    });
+  }
+
+  if (clientFilter) {
+    filtered = filtered.filter(o => o.clientId === clientFilter);
+  }
+  if (from) {
+    filtered = filtered.filter(o => o.date >= from);
+  }
+  if (to) {
+    filtered = filtered.filter(o => o.date <= to);
+  }
+  if (statusFilter) {
+    filtered = filtered.filter(o => o.status === statusFilter);
+  }
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No matching orders found.</td></tr>';
     return;
   }
 
-  orders.slice().reverse().forEach(o => {
+  filtered.forEach(o => {
     let statusClass = 'badge-secondary';
     if (o.status === 'Pending') statusClass = 'badge-info';
     else if (o.status === 'Partially Delivered') statusClass = 'badge-warning';
@@ -149,7 +198,7 @@ function renderOrders() {
     const tr = document.createElement('tr');
     tr.className = 'table-row-animate';
     tr.innerHTML = `
-      <td><span class="badge badge-accent order-id-badge" title="${escapeHtml(o.id || '')}">${escapeHtml(o.id || '')}</span></td>
+      <td><span class="badge badge-accent order-id-badge cursor-pointer" onclick="viewOrderById('${escapeHtml(o.id || '')}')" title="Click to view details: ${escapeHtml(o.id || '')}">${escapeHtml(o.id || '')}</span></td>
       <td><strong>${formatDate(o.date)}</strong></td>
       <td>${escapeHtml(o.clientName || '')}</td>
       <td class="text-center"><strong>${ordered}</strong> <span class="text-muted" style="font-size:0.75rem;">(${items.length} items)</span></td>
@@ -162,6 +211,9 @@ function renderOrders() {
             <i data-lucide="more-horizontal" style="width: 14px; height: 14px;"></i>
           </button>
           <div id="dropdown-order-${o.id}" class="dropdown-menu-content" style="display: none; position: absolute; right: 0; top: 100%; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); z-index: 50; min-width: 110px; margin-top: 4px;">
+            <button class="dropdown-item" onclick="viewOrderById('${o.id}')" style="width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: transparent; border: none; font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+              <i data-lucide="eye" style="width: 14px; height: 14px;"></i> View
+            </button>
             <button class="dropdown-item" onclick="editOrder('${o.id}')" style="width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: transparent; border: none; font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
               <i data-lucide="edit-2" style="width: 14px; height: 14px;"></i> Edit
             </button>
@@ -175,6 +227,149 @@ function renderOrders() {
     tbody.appendChild(tr);
   });
 
+  if (window.lucide) lucide.createIcons();
+}
+
+function viewOrderById(orderId) {
+  const o = orders.find(x => String(x.id || '').trim() === String(orderId).trim());
+  if (!o) {
+    alert("Order not found or loaded.");
+    return;
+  }
+
+  // Find all packing slips linked to this order
+  const linkedSlips = slips.filter(s => {
+    const linkedIds = (s.linkedOrders || '').toString().split(',').map(x => x.trim()).filter(Boolean);
+    return linkedIds.includes(String(o.id || '').trim()) && s.slipCode.indexOf('-rev') === -1;
+  });
+
+  const items = Array.isArray(o.items) ? o.items : [];
+  const ordered = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const dispatched = items.reduce((sum, item) => sum + Number(item.shipped || 0), 0);
+  const remaining = Math.max(0, ordered - dispatched);
+
+  let statusClass = 'badge-secondary';
+  if (o.status === 'Pending') statusClass = 'badge-info';
+  else if (o.status === 'Partially Delivered') statusClass = 'badge-warning';
+  else if (o.status === 'Completed') statusClass = 'badge-success';
+
+  $('#modal-title').textContent = 'Order Detail';
+  const body = $('#modal-body');
+
+  let html = `
+    <div class="preview-slip-document animate-scale-in" style="border-color: var(--primary);">
+      <!-- Order Header -->
+      <div class="preview-header" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem;">
+        <div class="preview-company">
+          <div class="preview-company-details">
+            <h4 class="preview-company-name">ORDER RECORD</h4>
+            <p class="preview-text-muted" style="margin-top: 4px;">ID: <span class="badge badge-accent" style="font-size:0.9rem; font-weight: 600;">${escapeHtml(o.id)}</span></p>
+          </div>
+        </div>
+        <div class="preview-slip-meta">
+          <h2 class="preview-title" style="color: var(--primary); margin-top:0;">ORDER</h2>
+          <div class="preview-meta-row">
+            <span class="meta-label">Order Date:</span>
+            <span class="meta-value"><strong>${formatDate(o.date)}</strong></span>
+          </div>
+          <div class="preview-meta-row">
+            <span class="meta-label">Status:</span>
+            <span class="meta-value"><span class="badge ${statusClass}">${escapeHtml(o.status)}</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="preview-divider"></div>
+
+      <!-- Client card -->
+      <div class="preview-shipping">
+        <h5 class="preview-section-title">Client Info:</h5>
+        <div class="shipping-card">
+          <h4 class="client-title">${escapeHtml(o.clientName)}</h4>
+          ${o.clientCompany ? `<p class="client-company">${escapeHtml(o.clientCompany)}</p>` : ''}
+          ${o.clientAddress ? `<p class="client-address text-pre-line">${escapeHtml(o.clientAddress)}</p>` : ''}
+          ${o.clientPhone ? `<p class="client-phone"><i data-lucide="phone" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> ${escapeHtml(o.clientPhone)}</p>` : ''}
+        </div>
+      </div>
+
+      <!-- Items Table -->
+      <div class="preview-items" style="margin-top: 1.5rem;">
+        <h5 class="preview-section-title">Ordered Items:</h5>
+        <table class="preview-table" id="order-detail-items-table">
+          <thead>
+            <tr>
+              <th class="text-center" style="width: 36px;">#</th>
+              <th>Product Name</th>
+              <th>Product Description</th>
+              <th class="text-center" style="width: 86px;">Ordered</th>
+              <th class="text-center" style="width: 86px;">Dispatched</th>
+              <th class="text-center" style="width: 86px;">Remaining</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map((it, idx) => {
+              const rem = Math.max(0, Number(it.quantity || 0) - Number(it.shipped || 0));
+              return `
+                <tr>
+                  <td class="text-center preview-row-index">${idx + 1}</td>
+                  <td class="preview-name-cell"><strong>${escapeHtml(it.name || '')}</strong></td>
+                  <td class="preview-desc-cell">${escapeHtml(it.description || '')}</td>
+                  <td class="text-center"><strong>${it.quantity}</strong></td>
+                  <td class="text-center"><strong>${it.shipped || 0}</strong></td>
+                  <td class="text-center"><span class="badge ${rem === 0 ? 'badge-success-soft' : 'badge-warning-soft'}" style="font-size:0.8rem; padding:2px 6px;">${rem}</span></td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3" class="text-right font-semibold">Totals</td>
+              <td class="text-center font-bold">${ordered}</td>
+              <td class="text-center font-bold">${dispatched}</td>
+              <td class="text-center font-bold">${remaining}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Associated Packing Slips Section -->
+    <div style="margin-top: 1rem; margin-bottom: 1.5rem; background: var(--primary-soft); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border); box-shadow: var(--shadow-sm);" class="animate-fade-in">
+      <h4 style="margin-top: 0; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; color: var(--primary); font-weight: 700;">
+        <i data-lucide="archive" style="width: 16px; height: 16px;"></i> Associated Packing Slips
+      </h4>
+      ${linkedSlips.length === 0 ? `
+        <div style="font-size: 0.85rem; color: var(--text-muted); font-style: italic;">No packing slips generated for this order yet.</div>
+      ` : `
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          ${linkedSlips.map(s => `
+            <div style="display: flex; align-items: center; justify-content: space-between; background: var(--card); padding: 0.65rem 0.85rem; border-radius: var(--radius-xs); border: 1px solid var(--border);">
+              <div>
+                <span class="badge badge-accent font-bold" style="margin-right: 8px;">${escapeHtml(s.slipCode)}</span>
+                <span style="font-size: 0.88rem; font-weight: 500;">Dispatched ${s.totalQuantity || 0} units</span>
+                <span style="font-size: 0.8rem; color: var(--text-muted); margin-left: 8px;">(${formatDate(s.date)})</span>
+              </div>
+              <div style="display:flex; gap: 4px;">
+                <button class="btn btn-secondary-soft btn-xs" onclick="viewSlipByCode('${escapeHtml(s.slipCode)}')" style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; font-size: 0.75rem;">
+                  <i data-lucide="eye" style="width: 12px; height: 12px;"></i> View Slip
+                </button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </div>
+
+    <!-- Actions outside doc -->
+    <div class="modal-actions-bar">
+      <button class="btn btn-secondary btn-md" onclick="closeModal()">
+        Close
+      </button>
+    </div>
+  `;
+
+  body.innerHTML = html;
+  $('#modal').classList.add('active');
   if (window.lucide) lucide.createIcons();
 }
 

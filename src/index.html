@@ -480,6 +480,43 @@
 
           <div class="card">
             <h2><i data-lucide="shopping-bag" style="color:var(--accent);"></i> Order Directory</h2>
+            
+            <!-- Orders Filters dashboard -->
+            <div style="display: flex; gap: 8px; margin-bottom: 1rem; align-items: center;">
+              <div class="field-group" style="flex: 1; margin: 0;">
+                <input id="order-filter-search" type="text" placeholder="Search by order ID, client name, status, items..." style="width: 100%; height: 42px;">
+              </div>
+              <button type="button" class="btn btn-secondary-soft" id="btn-toggle-order-filters" onclick="toggleOrderFiltersDropdown()" style="height: 42px; display: inline-flex; align-items: center; gap: 6px;">
+                <i data-lucide="sliders" style="width: 16px; height: 16px;"></i> Filters
+              </button>
+            </div>
+            
+            <div id="order-filters-tray" class="filters animate-fade-in" style="display: none; margin-bottom: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+              <div class="field-group">
+                <label for="order-filter-client">Filter by Client</label>
+                <select id="order-filter-client">
+                  <option value="">All clients</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="order-filter-from">From Date</label>
+                <input id="order-filter-from" type="date">
+              </div>
+              <div class="field-group">
+                <label for="order-filter-to">To Date</label>
+                <input id="order-filter-to" type="date">
+              </div>
+              <div class="field-group">
+                <label for="order-filter-status">Status</label>
+                <select id="order-filter-status">
+                  <option value="">All statuses</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Partially Delivered">Partially Delivered</option>
+                  <option value="Completed">Completed</option>
+                </select>
+              </div>
+            </div>
+
             <div class="table-responsive">
               <table id="orders-table">
                 <thead>
@@ -627,11 +664,16 @@
             <h2><i data-lucide="archive" style="color:var(--accent);"></i> Historical Packing Slips</h2>
             
             <!-- Filters dashboard -->
-            <div class="filters">
-              <div class="field-group">
-                <label for="filter-search">Search Text</label>
-                <input id="filter-search" type="text" placeholder="Search by name, code, company...">
+            <div style="display: flex; gap: 8px; margin-bottom: 1rem; align-items: center;">
+              <div class="field-group" style="flex: 1; margin: 0;">
+                <input id="filter-search" type="text" placeholder="Search by name, code, company..." style="width: 100%; height: 42px;">
               </div>
+              <button type="button" class="btn btn-secondary-soft" id="btn-toggle-slip-filters" onclick="toggleSlipFiltersDropdown()" style="height: 42px; display: inline-flex; align-items: center; gap: 6px;">
+                <i data-lucide="sliders" style="width: 16px; height: 16px;"></i> Filters
+              </button>
+            </div>
+            
+            <div id="slip-filters-tray" class="filters animate-fade-in" style="display: none; margin-bottom: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
               <div class="field-group">
                 <label for="filter-client">Filter by Client</label>
                 <select id="filter-client">

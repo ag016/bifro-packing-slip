@@ -315,6 +315,22 @@ function initApp() {
 
   const filterInvoiceNumEl = $('#filter-invoice-num');
   if (filterInvoiceNumEl) filterInvoiceNumEl.addEventListener('input', renderSlips);
+
+  // Order listing live filters
+  const orderSearchEl = $('#order-filter-search');
+  if (orderSearchEl) orderSearchEl.addEventListener('input', renderOrders);
+
+  const orderClientFilterEl = $('#order-filter-client');
+  if (orderClientFilterEl) orderClientFilterEl.addEventListener('change', renderOrders);
+
+  const orderFilterFromEl = $('#order-filter-from');
+  if (orderFilterFromEl) orderFilterFromEl.addEventListener('change', renderOrders);
+
+  const orderFilterToEl = $('#order-filter-to');
+  if (orderFilterToEl) orderFilterToEl.addEventListener('change', renderOrders);
+
+  const orderFilterStatusEl = $('#order-filter-status');
+  if (orderFilterStatusEl) orderFilterStatusEl.addEventListener('change', renderOrders);
   
   // Initial SVG Icon render
   if (window.lucide) lucide.createIcons();

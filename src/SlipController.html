@@ -1021,6 +1021,20 @@ function renderSlips() {
   if (window.lucide) lucide.createIcons();
 }
 
+function toggleSlipFiltersDropdown() {
+  const tray = $('#slip-filters-tray');
+  const btn = $('#btn-toggle-slip-filters');
+  if (!tray || !btn) return;
+  const isHidden = tray.style.display === 'none';
+  if (isHidden) {
+    tray.style.display = 'grid';
+    btn.classList.add('active');
+  } else {
+    tray.style.display = 'none';
+    btn.classList.remove('active');
+  }
+}
+
 function viewSlipByCode(slipCode) {
   // Find the exact slip (could be active or a revision)
   const s = slips.find(x => x.slipCode === slipCode);
@@ -1222,6 +1236,36 @@ function viewSlipByCode(slipCode) {
       </div>
     </div>
   `;
+
+  // Fetch associated orders for this packing slip
+  const linkedOrders = orders.filter(o => linkedIds.includes(String(o.id || '').trim()));
+  let associatedOrdersHtml = '';
+  if (linkedOrders.length > 0) {
+    associatedOrdersHtml += `
+      <div style="margin-top: 1.5rem; background: var(--primary-soft); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border); box-shadow: var(--shadow-sm);" class="animate-fade-in">
+        <h4 style="margin-top: 0; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; color: var(--primary); font-weight: 700;">
+          <i data-lucide="shopping-bag" style="width: 16px; height: 16px;"></i> Associated Orders
+        </h4>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          ${linkedOrders.map(o => `
+            <div style="display: flex; align-items: center; justify-content: space-between; background: var(--card); padding: 0.65rem 0.85rem; border-radius: var(--radius-xs); border: 1px solid var(--border);">
+              <div>
+                <span class="badge badge-accent order-id-badge cursor-pointer" onclick="viewOrderById('${escapeHtml(o.id)}')" style="vertical-align: middle; margin-right: 8px;" title="Click to view details: ${escapeHtml(o.id)}">${escapeHtml(o.id)}</span>
+                <span style="font-size: 0.88rem; font-weight: 600;">${escapeHtml(o.clientName)}</span>
+                <span style="font-size: 0.8rem; color: var(--text-muted); margin-left: 8px;">(${formatDate(o.date)})</span>
+                <span class="badge ${o.status === 'Completed' ? 'badge-success' : o.status === 'Partially Delivered' ? 'badge-warning' : 'badge-info'}" style="margin-left: 8px; font-size: 0.7rem; padding: 1px 6px;">${escapeHtml(o.status)}</span>
+              </div>
+              <button class="btn btn-secondary-soft btn-xs" onclick="viewOrderById('${escapeHtml(o.id)}')" style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; font-size: 0.75rem;">
+                <i data-lucide="eye" style="width: 12px; height: 12px;"></i> View Order
+              </button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <div style="height: 1rem;"></div>
+    `;
+  }
+  html += associatedOrdersHtml;
 
   // Revision History Navigator Panel (Inside modal body)
   if (activeSlip && (revisions.length > 0)) {
