@@ -157,13 +157,18 @@ function renderOrders() {
       <td class="text-center">${remainingBadge}</td>
       <td><span class="badge ${statusClass}">${escapeHtml(o.status || 'Pending')}</span></td>
       <td>
-        <div style="display:flex; gap: 4px;">
-          <button class="btn btn-secondary-soft btn-xs" onclick="editOrder('${o.id}')" title="Edit Order">
-            <i data-lucide="edit-2" style="width: 12px; height: 12px;"></i> Edit
+        <div class="custom-dropdown" style="position: relative; display: inline-block;">
+          <button class="btn btn-secondary-soft btn-xs btn-icon-only dropdown-toggle" onclick="toggleRowDropdown(event, 'order-${o.id}')" title="Actions">
+            <i data-lucide="more-horizontal" style="width: 14px; height: 14px;"></i>
           </button>
-          <button class="btn btn-danger-soft btn-xs" onclick="deleteOrderClick('${o.id}')" title="Delete Order">
-            <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i> Delete
-          </button>
+          <div id="dropdown-order-${o.id}" class="dropdown-menu-content" style="display: none; position: absolute; right: 0; top: 100%; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); z-index: 50; min-width: 110px; margin-top: 4px;">
+            <button class="dropdown-item" onclick="editOrder('${o.id}')" style="width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: transparent; border: none; font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+              <i data-lucide="edit-2" style="width: 14px; height: 14px;"></i> Edit
+            </button>
+            <button class="dropdown-item" onclick="deleteOrderClick('${o.id}')" style="width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: transparent; border: none; font-size: 0.85rem; color: var(--danger); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+              <i data-lucide="trash-2" style="width: 14px; height: 14px; color: var(--danger);"></i> Delete
+            </button>
+          </div>
         </div>
       </td>
     `;
