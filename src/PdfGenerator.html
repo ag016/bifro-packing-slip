@@ -91,14 +91,38 @@ function generatePDF(slip, settings) {
   var orderMetaList = Array.isArray(slip.linkedOrderMeta) ? slip.linkedOrderMeta : [];
 
   var baseY = y + 66;
-  if (linkedOrderIds.length) {
+
+  // Right-side metadata layout: labels right-aligned in a fixed column
+  // (~86pt) flush against the right margin; values left-aligned just to the
+  // left of the label column, wrapping with splitTextToSize when they
+  // outgrow the available width. This stops long order numbers like
+  // "OR-2C260702009-01" from colliding with the label or the row below.
+  var labelColumnEnd = pageW - margin;        // right edge of the metadata block
+  var labelColumnWidth = 86;                 // reserved width for the label column
+  var valueColumnEnd = labelColumnEnd - labelColumnWidth - 6;  // where value text begins (left edge)
+  var valueColumnLeftEdge = 250;             // safe inner bound so values stay clear of the company-info column
+  var valueMaxWidth = Math.max(60, valueColumnEnd - valueColumnLeftEdge);
+
+  function drawMetaRow(label, valueText, opts) {
+    if (!valueText) return;
+    var text = String(valueText);
+    if (!text.trim()) return;
     doc.setFont('Helvetica', 'bold');
     doc.setTextColor(30, 58, 95);
-    doc.text('Order #:', pageW - margin - 70, baseY, { align: 'right' });
+    doc.text(label + ':', labelColumnEnd, baseY, { align: 'right' });
     doc.setFont('Helvetica', 'normal');
     doc.setTextColor(71, 85, 105);
-    doc.text(linkedOrderIds.join(', '), pageW - margin, baseY, { align: 'right' });
-    baseY += 14;
+    var lines = doc.splitTextToSize(text, valueMaxWidth);
+    doc.text(lines, valueColumnEnd, baseY);
+    // Grow baseY per actual line so the row never overlaps the next row.
+    baseY += Math.max(14, 14 * lines.length);
+    if (opts && opts.interRow) baseY += opts.interRow;
+  }
+
+  drawMetaRow('Slip Code', slip.slipCode);
+  drawMetaRow('Dispatch Date', formatDate(slip.date));
+  if (linkedOrderIds.length) {
+    drawMetaRow('Order #', linkedOrderIds.join(', '));
   }
   if (orderMetaList.length) {
     var orderDates = orderMetaList.map(function (m) { return m && m.date; }).filter(Boolean);
@@ -107,23 +131,11 @@ function generatePDF(slip, settings) {
       var orderDateText = orderDates.length === 1
         ? formatDate(orderDates[0])
         : (formatDate(orderDates[0]) + ' – ' + formatDate(orderDates[orderDates.length - 1]));
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(30, 58, 95);
-      doc.text('Order Date:', pageW - margin - 70, baseY, { align: 'right' });
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(71, 85, 105);
-      doc.text(orderDateText, pageW - margin, baseY, { align: 'right' });
-      baseY += 14;
+      drawMetaRow('Order Date', orderDateText);
     }
   }
   if (invoiceNums.length) {
-    doc.setFont('Helvetica', 'bold');
-    doc.setTextColor(30, 58, 95);
-    doc.text('Invoice #:', pageW - margin - 70, baseY, { align: 'right' });
-    doc.setFont('Helvetica', 'normal');
-    doc.setTextColor(71, 85, 105);
-    doc.text(invoiceNums.join(', '), pageW - margin, baseY, { align: 'right' });
-    baseY += 14;
+    drawMetaRow('Invoice #', invoiceNums.join(', '));
   }
   var yShift = (baseY - (y + 66));
   y += (yShift > 0 ? yShift : 0);

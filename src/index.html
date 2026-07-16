@@ -398,8 +398,9 @@
               <div class="grid-3">
                 <div class="field-group">
                   <label for="order-client">Select Client *</label>
-                  <select id="order-client" required>
+                  <select id="order-client" required onchange="toggleNewOrderClient()">
                     <option value="">-- Choose Client --</option>
+                    <option value="new">+ Add new client</option>
                   </select>
                 </div>
                 <div class="field-group">
@@ -409,6 +410,35 @@
                 <div class="field-group">
                   <label for="order-custom-id">Order Number (Optional)</label>
                   <input type="text" id="order-custom-id" placeholder="e.g. SO-1002 (blank to auto-generate)">
+                </div>
+              </div>
+
+              <!-- Inline new-client fields on the Order form -->
+              <div id="new-order-client-fields" class="card-sm-inset animate-fade-in" style="display:none; margin-top: 1rem;">
+                <h3 style="margin-top:0.25rem;"><i data-lucide="user-check" style="width:18px;height:18px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> New Client Details</h3>
+                <div class="grid-3">
+                  <div class="field-group">
+                    <label for="new-order-client-name" class="label-inline">Client Name *</label>
+                    <input id="new-order-client-name" type="text" placeholder="John Doe">
+                  </div>
+                  <div class="field-group">
+                    <label for="new-order-client-company" class="label-inline">Company Name</label>
+                    <input id="new-order-client-company" type="text" placeholder="Acme Corp">
+                  </div>
+                  <div class="field-group">
+                    <label for="new-order-client-phone" class="label-inline">Phone Number</label>
+                    <input id="new-order-client-phone" type="text" placeholder="(555) 123-4567">
+                  </div>
+                </div>
+                <div class="field-group" style="margin-top: 0.85rem;">
+                  <label for="new-order-client-address" class="label-inline">Address</label>
+                  <textarea id="new-order-client-address" placeholder="Address street, city, state, zip..."></textarea>
+                </div>
+                <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.85rem; align-items:center;">
+                  <button type="button" class="btn btn-primary btn-sm" id="btn-save-new-order-client" onclick="saveNewOrderClient()">
+                    <i data-lucide="user-plus"></i> Save Client Now
+                  </button>
+                  <span class="text-muted" style="font-size:0.78rem;">Saves the client to the directory immediately so it appears in the dropdown above.</span>
                 </div>
               </div>
 
@@ -502,6 +532,12 @@
                   <label for="new-client-address" class="label-inline">Shipment Address</label>
                   <textarea id="new-client-address" placeholder="Address street, city, state, zip..."></textarea>
                 </div>
+                <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.85rem; align-items:center;">
+                  <button type="button" class="btn btn-primary btn-sm" id="btn-save-new-slip-client" onclick="saveNewSlipClient()">
+                    <i data-lucide="user-plus"></i> Save Client Now
+                  </button>
+                  <span class="text-muted" style="font-size:0.78rem;">Saves the client to the directory immediately so it appears in the dropdown above.</span>
+                </div>
               </div>
 
               <!-- Date + consolidated Invoice Numbers (chip panel lives here at the top) -->
@@ -523,12 +559,44 @@
               <div class="field-group" style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
                 <label style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                   <span>Linked Orders</span>
-                  <button type="button" class="btn btn-secondary-soft btn-xs" onclick="openLinkOrderModal()" style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">+ Link Order</button>
+                  <span style="display:flex; gap:0.35rem;">
+                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="openLinkOrderModal()" style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">+ Link Order</button>
+                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="toggleCreateOrderFromSlip()" style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">+ New Order</button>
+                  </span>
                 </label>
                 <div id="linked-orders-tags" class="link-tag-container">
                   <span class="text-muted" style="font-size:0.85rem; font-style:italic;">No orders linked</span>
                 </div>
                 <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.35rem;">Invoice numbers on this slip sync into any linked order's invoice numbers automatically.</p>
+              </div>
+
+              <!-- Inline mini-form: create a new order from this slip (auto-linked) -->
+              <div id="create-order-fields" class="card-sm-inset animate-fade-in" style="display:none; margin-top: 0.85rem;">
+                <h3 style="margin-top:0.25rem;"><i data-lucide="shopping-cart" style="width:18px;height:18px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Quick Order (auto-link to this slip)</h3>
+                <div class="grid-3">
+                  <div class="field-group">
+                    <label for="new-order-custom-id" class="label-inline">Order # <span class="text-muted" style="font-weight:400; text-transform:none; letter-spacing:0;">(auto if blank)</span></label>
+                    <input id="new-order-custom-id" type="text" placeholder="e.g. OR-2025-0001">
+                  </div>
+                  <div class="field-group">
+                    <label for="new-order-date" class="label-inline">Order Date</label>
+                    <input id="new-order-date" type="date">
+                  </div>
+                  <div class="field-group">
+                    <label for="new-order-invoices" class="label-inline">Invoice # <span class="text-muted" style="font-weight:400; text-transform:none; letter-spacing:0;">(auto from slip)</span></label>
+                    <input id="new-order-invoices" type="text" placeholder="comma-separated invoice numbers">
+                  </div>
+                </div>
+                <h4 style="margin-top: 0.85rem; margin-bottom: 0.4rem; font-size: 0.95rem;">Items</h4>
+                <div id="new-order-items-container"></div>
+                <button type="button" class="btn btn-secondary-soft btn-xs" onclick="addNewOrderItemRow('', 1, 1)" style="margin-top: 0.5rem;">+ Add Item Row</button>
+                <div style="margin-top: 0.85rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+                  <button type="button" class="btn btn-primary btn-sm" id="btn-create-order-submit" onclick="submitCreateOrderFromSlip()">
+                    <i data-lucide="save"></i> Save & Link Order
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="toggleCreateOrderFromSlip()">Cancel</button>
+                  <span class="text-muted" style="font-size: 0.78rem; align-self: center;">Descriptions stay on the slip only \u2014 they aren't copied onto the order.</span>
+                </div>
               </div>
 
               <h2 style="margin: 2rem 0 1rem;"><i data-lucide="list" style="color:var(--accent);"></i> Package Contents</h2>

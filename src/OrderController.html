@@ -47,8 +47,9 @@ function populateOrderClientSelect() {
   const sel = $('#order-client');
   if (!sel) return;
   const current = sel.value;
-  sel.innerHTML = '<option value="">-- Choose Client --</option>';
-  
+  sel.innerHTML = '<option value="">-- Choose Client --</option>' +
+    '<option value="new">+ Add new client</option>';
+
   clients.forEach(c => {
     const opt = document.createElement('option');
     opt.value = c.id;
@@ -56,6 +57,65 @@ function populateOrderClientSelect() {
     sel.appendChild(opt);
   });
   sel.value = current;
+}
+
+/* ------------------------------------------------------------------
+ * Save New Client on the Order form (independent of order save)
+ * ------------------------------------------------------------------ */
+
+function toggleNewOrderClient() {
+  const sel = $('#order-client');
+  const fields = $('#new-order-client-fields');
+  if (!sel || !fields) return;
+  if (sel.value === 'new') {
+    fields.style.display = '';
+    const nm = $('#new-order-client-name');
+    if (nm) setTimeout(function () { nm.focus(); }, 50);
+  } else {
+    fields.style.display = 'none';
+  }
+}
+
+function _readNewOrderClient() {
+  return {
+    name: ($('#new-order-client-name') ? $('#new-order-client-name').value : '').trim(),
+    company: ($('#new-order-client-company') ? $('#new-order-client-company').value : '').trim(),
+    phone: ($('#new-order-client-phone') ? $('#new-order-client-phone').value : '').trim(),
+    address: ($('#new-order-client-address') ? $('#new-order-client-address').value : '').trim()
+  };
+}
+
+function saveNewOrderClient() {
+  const btn = $('#btn-save-new-order-client');
+  const restore = _setButtonBusy ? _setButtonBusy(btn, 'Saving...') : function () {};
+  try {
+    const client = _readNewOrderClient();
+    if (!client.name) { toast('Client name is required.', 'warning'); restore(); return; }
+    if (!client.phone && !client.address) {
+      toast('Phone or Address is required so the client is usable on printed slips.', 'warning');
+      restore();
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function (saved) {
+        try {
+          if (!saved || !saved.id) { toast('Save failed.', 'danger'); restore(); return; }
+          clients.push(saved);
+          populateOrderClientSelect(saved.id);
+          const sel = $('#order-client');
+          if (sel) sel.value = saved.id;
+          const fields = $('#new-order-client-fields');
+          if (fields) fields.style.display = 'none';
+          toast('Saved client ' + (saved.name || '') + ' (' + saved.id + ').', 'success');
+          try { loadOrderClientSuggestions(); } catch (e) {}
+        } finally { restore(); }
+      })
+      .withFailureHandler(function (err) { handleError(err); restore(); })
+      .saveClient(client);
+  } catch (e) {
+    handleError(e);
+    restore();
+  }
 }
 
 function renderOrders() {
@@ -231,8 +291,28 @@ function saveOrderSubmit() {
     return;
   }
 
-  const clientObj = clients.find(c => String(c.id).trim() === String(clientId).trim());
+  let clientObj = null;
+  if (clientId !== 'new') {
+    clientObj = clients.find(c => String(c.id).trim() === String(clientId).trim());
+  }
   if (!clientObj) {
+    if (clientId === 'new') {
+      // User picked "+ Add new client" but neither saved it nor filled the
+      // inline fields; surface a clear error so they know what to do.
+      const v = _readNewOrderClient();
+      if (!v.name) {
+        toast('Please fill in the new client details above and click "Save Client Now" (or select an existing client).', 'warning');
+        const fields = $('#new-order-client-fields');
+        if (fields) {
+          fields.style.display = '';
+          const nm = $('#new-order-client-name');
+          if (nm) setTimeout(function () { nm.focus(); }, 50);
+        }
+        return;
+      }
+      toast('Please click "Save Client Now" on the new client panel before saving the order.', 'warning');
+      return;
+    }
     toast('Selected client not found in database.', 'danger');
     return;
   }

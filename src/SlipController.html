@@ -349,17 +349,16 @@ function doSaveSlip(slip) {
 }
 
 /**
- * Returns a restore function for the given button. While busy, the button
- * shows a spinner + "Generating PDF..." label and ignores further clicks.
- * Callers must invoke the restore once the PDF has finished rendering
- * (or failed) so the user can re-trigger the action.
+ * Disables a button, swaps its content for a spinner + busyLabel, and
+ * returns a `restore` function callers must invoke once the task is done so
+ * the button is reusable. Used by print + save actions.
  */
-function _setPrintBusy(buttonEl) {
+function _setButtonBusy(buttonEl, busyLabel) {
   if (!buttonEl) return function restore() {};
   const prevHtml = buttonEl.innerHTML;
   const prevDisabled = !!buttonEl.disabled;
   buttonEl.disabled = true;
-  buttonEl.innerHTML = '<span class="spinner"></span> Generating PDF...';
+  buttonEl.innerHTML = '<span class="spinner"></span> ' + (busyLabel || 'Working...');
   let restored = false;
   return function restore() {
     if (restored) return;
@@ -372,8 +371,11 @@ function _setPrintBusy(buttonEl) {
   };
 }
 
+// Back-compat alias kept for any old call sites.
+function _setPrintBusy(buttonEl) { return _setButtonBusy(buttonEl, 'Generating PDF...'); }
+
 function printCurrentSlip() {
-  const restore = _setPrintBusy($('#btn-print-slip'));
+  const restore = _setButtonBusy($('#btn-print-slip'), 'Generating PDF...');
   if (currentSlip) {
     let s = currentSlip;
     if (!Array.isArray(s.invoiceNumbers)) {
@@ -392,7 +394,7 @@ function printCurrentSlip() {
 }
 
 function printSlipByCode(slipCode, anchorEl) {
-  const restore = _setPrintBusy(anchorEl);
+  const restore = _setButtonBusy(anchorEl, 'Generating PDF...');
   try {
     const s = slips.find(x => x.slipCode === slipCode);
     if (!s) {
@@ -1714,6 +1716,239 @@ function saveLinkOrderOnTheFly() {
       linkOrder(saved.id);
     })
     .withFailureHandler(handleError)
+    .saveOrder(order);
+}
+
+/* ------------------------------------------------------------------
+ * Save New Client (independent of slip save)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Reads the slip form's inline new-client inputs and validates them.
+ * Returns { client, ok, error }.
+ */
+function _readValidateNewSlipClient() {
+  const nameEl = $('#new-client-name');
+  const companyEl = $('#new-client-company');
+  const phoneEl = $('#new-client-phone');
+  const addressEl = $('#new-client-address');
+  const client = {
+    name: nameEl ? String(nameEl.value || '').trim() : '',
+    company: companyEl ? String(companyEl.value || '').trim() : '',
+    phone: phoneEl ? String(phoneEl.value || '').trim() : '',
+    address: addressEl ? String(addressEl.value || '').trim() : ''
+  };
+  if (!client.name) return { client: client, ok: false, error: 'Client name is required.' };
+  if (!client.phone && !client.address) {
+    return { client: client, ok: false, error: 'Phone or Address is required so the client is usable on printed slips.' };
+  }
+  return { client: client, ok: true, error: '' };
+}
+
+/**
+ * Saves the inline new-client inputs as an independent record (no slip
+ * save required), refreshes the client dropdown, auto-selects the new
+ * client, and hides the inline fields panel so the form behaves as if the
+ * client had always existed. Used by the "+ Save Client Now" button
+ * surfaced under "Select Client" on the packing slip form.
+ */
+function saveNewSlipClient() {
+  const btn = $('#btn-save-new-slip-client');
+  const restore = _setButtonBusy(btn, 'Saving...');
+  try {
+    const v = _readValidateNewSlipClient();
+    if (!v.ok) { toast(v.error, 'warning'); restore(); return; }
+    google.script.run
+      .withSuccessHandler(saved => {
+        try {
+          if (!saved || !saved.id) { toast('Save failed (no client id returned).', 'danger'); restore(); return; }
+          // Append to local cache and refresh the dropdown.
+          clients.push(saved);
+          if (typeof populateClientSelect === 'function') {
+            populateClientSelect(saved.id);
+          }
+          // Switch the select from "new" over to the freshly created client.
+          const select = $('#slip-client');
+          if (select) select.value = saved.id;
+          // Hide the inline panel now that the dropdown shows the saved client.
+          const fields = $('#new-client-fields');
+          if (fields) fields.style.display = 'none';
+          toast('Saved client ' + (saved.name || '') + ' (' + saved.id + ').', 'success');
+          // Refresh linked-order suggestions and any dependent UI.
+          try { loadClients(); } catch (e) {}
+        } finally { restore(); }
+      })
+      .withFailureHandler(err => { handleError(err); restore(); })
+      .saveClient(v.client);
+  } catch (e) {
+    handleError(e);
+    restore();
+  }
+}
+
+/* ------------------------------------------------------------------
+ * Inline Create Order from Slip form
+ *
+ * Lets the user stub an order directly from the slip form so future slips
+ * for the same client can be auto-linked against it (carrying over any
+ * leftover Ordered vs Dispatched amounts). Descriptions from the slip are
+ * intentionally NOT propagated onto the order — descriptions stay on the
+ * slip only.
+ * ------------------------------------------------------------------ */
+
+function _prefillNewOrderFromSlip() {
+  // Order date defaults to today, invoice numbers defaults to the slip's
+  // invoice numbers, items pre-populate from the current slip's items.
+  const dateEl = $('#new-order-date');
+  if (dateEl && !dateEl.value) {
+    try { dateEl.valueAsDate = new Date(); } catch (e) {
+      dateEl.value = new Date().toISOString().substring(0, 10);
+    }
+  }
+  const invEl = $('#new-order-invoices');
+  if (invEl && !invEl.value && Array.isArray(invoiceNumbers)) {
+    invEl.value = invoiceNumbers.join(', ');
+  }
+  const container = $('#new-order-items-container');
+  if (container && !container.children.length) {
+    let items = [];
+    if (currentSlip && Array.isArray(currentSlip.items) && currentSlip.items.length) {
+      items = currentSlip.items;
+    } else {
+      const rows = $$('#items-container .item-row');
+      items = rows.map(function (row) {
+        const name = row.querySelector('.item-name');
+        const qty = row.querySelector('.item-qty');
+        return {
+          name: name && name.value ? name.value : '',
+          quantity: qty && qty.value ? parseInt(qty.value, 10) : 1
+        };
+      }).filter(function (it) { return it && it.name; });
+    }
+    items.forEach(function (it) {
+      addNewOrderItemRow(it.name || '', Number(it.quantity || 1), Number(it.quantity || 1));
+    });
+    if (!items.length) addNewOrderItemRow('', 1, 1);
+  }
+}
+
+function toggleCreateOrderFromSlip() {
+  const fields = $('#create-order-fields');
+  if (!fields) return;
+  if (fields.style.display === 'none' || !fields.style.display) {
+    _prefillNewOrderFromSlip();
+    fields.style.display = '';
+  } else {
+    fields.style.display = 'none';
+  }
+}
+
+function addNewOrderItemRow(name, orderedQty, dispatchedQty) {
+  const container = $('#new-order-items-container');
+  if (!container) return;
+  const row = document.createElement('div');
+  row.className = 'item-row card-sm-inset';
+  row.style.padding = '0.5rem';
+  row.style.marginBottom = '0.5rem';
+  row.style.display = 'flex';
+  row.style.gap = '0.4rem';
+  row.style.alignItems = 'center';
+  row.style.flexWrap = 'wrap';
+  row.innerHTML = `
+    <input type="text" class="item-name" placeholder="Item name..." value="${escapeHtml(name || '')}" style="flex:2; padding:0.4rem; min-width:160px;" required>
+    <input type="number" class="item-ordered" placeholder="Ordered" min="0" step="1" value="${Number(orderedQty || 0) || 0}" style="flex:1; padding:0.4rem; max-width:100px;" title="Ordered quantity on this order">
+    <input type="number" class="item-dispatched" placeholder="Dispatched" min="0" step="1" value="${Number(dispatchedQty || 0) || 0}" style="flex:1; padding:0.4rem; max-width:100px;" title="Dispatched quantity on this slip">
+    <button type="button" class="btn btn-danger-soft btn-xs" onclick="this.closest('.item-row').remove()" title="Remove Row">×</button>
+  `;
+  container.appendChild(row);
+}
+
+function submitCreateOrderFromSlip() {
+  const clientId = $('#slip-client').value;
+  if (!clientId || clientId === 'new') {
+    toast('Please select a registered client first.', 'warning');
+    return;
+  }
+  const clientObj = clients.find(function (c) { return c.id === clientId; });
+  if (!clientObj) { toast('Selected client not found in cache.', 'danger'); return; }
+
+  const rows = $$('#new-order-items-container .item-row');
+  if (!rows.length) {
+    toast('Add at least one item row to the order.', 'warning');
+    return;
+  }
+  const items = [];
+  let valid = true;
+  rows.forEach(function (row, idx) {
+    const nameEl = row.querySelector('.item-name');
+    const orderedEl = row.querySelector('.item-ordered');
+    const dispatchedEl = row.querySelector('.item-dispatched');
+    const name = nameEl ? String(nameEl.value || '').trim() : '';
+    const ordered = orderedEl ? parseInt(orderedEl.value, 10) : NaN;
+    const dispatched = dispatchedEl ? parseInt(dispatchedEl.value, 10) : NaN;
+    if (!name) { toast('Row ' + (idx + 1) + ': name is required.', 'danger'); valid = false; return; }
+    if (isNaN(ordered) || ordered < 0) { toast('Row ' + (idx + 1) + ': ordered quantity must be a non-negative integer.', 'danger'); valid = false; return; }
+    if (isNaN(dispatched) || dispatched < 0) { toast('Row ' + (idx + 1) + ': dispatched quantity must be a non-negative integer.', 'danger'); valid = false; return; }
+    if (dispatched > ordered) { toast('Row ' + (idx + 1) + ': dispatched (' + dispatched + ') cannot exceed ordered (' + ordered + ').', 'danger'); valid = false; return; }
+    // Description intentionally NOT copied from slip — descriptions stay on the slip only.
+    items.push({
+      name: name,
+      quantity: ordered,
+      shipped: dispatched,
+      description: ''
+    });
+  });
+  if (!valid) return;
+
+  const dateEl = $('#new-order-date');
+  const orderDate = (dateEl && dateEl.value) ? dateEl.value : new Date().toISOString().substring(0, 10);
+
+  const invEl = $('#new-order-invoices');
+  const invRaw = invEl ? String(invEl.value || '') : '';
+  const invList = invRaw.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  const seen = {};
+  const dedup = [];
+  invList.forEach(function (v) { if (v && !seen[v]) { seen[v] = true; dedup.push(v); } });
+
+  const customIdEl = $('#new-order-custom-id');
+  const customId = (customIdEl && customIdEl.value.trim()) ? String(customIdEl.value).trim() : '';
+
+  const order = {
+    date: orderDate,
+    clientId: clientId,
+    clientName: clientObj.name,
+    items: items,
+    status: 'Pending',
+    invoiceNumbers: dedup,
+    invoiceNumbersRaw: invRaw
+  };
+  if (customId) order.customId = customId;
+
+  const btn = $('#btn-create-order-submit');
+  const restore = _setButtonBusy(btn, 'Saving...');
+
+  google.script.run
+    .withSuccessHandler(function (saved) {
+      try {
+        if (!saved || !saved.id) { toast('Order save failed (no id returned).', 'danger'); return; }
+        // Refresh local orders cache so subsequent selectors see the new order.
+        try {
+          if (Array.isArray(orders)) orders.push(saved);
+        } catch (e) {}
+        toast('Order created and linked: ' + saved.id, 'success');
+        linkOrder(saved.id);
+        // Reset the inline form fields but keep the panel open so the user
+        // can create another order if needed.
+        const container = $('#new-order-items-container');
+        if (container) container.innerHTML = '';
+        if (customIdEl) customIdEl.value = '';
+        if (invEl) invEl.value = '';
+      } finally { restore(); }
+    })
+    .withFailureHandler(function (err) {
+      handleError(err);
+      restore();
+    })
     .saveOrder(order);
 }
 </script>
