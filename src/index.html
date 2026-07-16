@@ -395,27 +395,19 @@
             <h2 id="order-form-title"><i data-lucide="shopping-cart" style="color:var(--accent);"></i> Register New Order</h2>
             <form id="order-form" onsubmit="event.preventDefault(); saveOrderSubmit();">
               <input type="hidden" id="order-edit-id" value="">
-              <div class="grid-3">
-                <div class="field-group-container" style="display: flex; align-items: flex-end; gap: 8px;">
-                  <div class="field-group" style="flex: 1;">
-                    <label for="order-client">Select Client *</label>
-                    <select id="order-client" required onchange="toggleNewOrderClient()">
-                      <option value="">-- Choose Client --</option>
-                    </select>
-                  </div>
-                  <button type="button" class="btn btn-secondary btn-md" id="btn-toggle-new-order-client" onclick="toggleNewOrderClientBtn()" style="height: 42px; padding: 0 12px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;" title="Add new client">
-                    <i data-lucide="plus" style="width: 16px; height: 16px; margin-right: 4px;"></i> Add Client
-                  </button>
+              <div class="field-group-container" style="display: flex; align-items: flex-end; gap: 8px;">
+                <div class="field-group" style="flex: 1;">
+                  <label for="order-client">Select Client *</label>
+                  <select id="order-client" required onchange="toggleNewOrderClient()">
+                    <option value="">-- Choose Client --</option>
+                  </select>
                 </div>
-                <div class="field-group">
-                  <label for="order-date">Order Date *</label>
-                  <input id="order-date" type="date" required>
-                </div>
-                <div class="field-group">
-                  <label for="order-custom-id">Order Number (Optional)</label>
-                  <input type="text" id="order-custom-id" placeholder="e.g. SO-1002 (blank to auto-generate)">
-                </div>
+                <button type="button" class="btn btn-secondary btn-md" id="btn-toggle-new-order-client" onclick="toggleNewOrderClientBtn()" style="height: 42px; padding: 0 12px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;" title="Add new client">
+                  <i data-lucide="plus" style="width: 16px; height: 16px; margin-right: 4px;"></i> Add Client
+                </button>
               </div>
+
+              <div style="height: 1.25rem;"></div>
 
               <!-- Inline new-client fields on the Order form -->
               <div id="new-order-client-fields" class="card-sm-inset animate-fade-in" style="display:none; margin-top: 1rem;">
@@ -446,10 +438,21 @@
                 </div>
               </div>
 
-              <div class="field-group" style="margin-top: 1rem;">
-                <label for="order-invoice-numbers">Invoice Numbers (Optional, comma-separated)</label>
-                <input type="text" id="order-invoice-numbers" placeholder="e.g. INV-2025-001, INV-2025-002">
-                <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.35rem;">Multiple invoice numbers can be attached to a single order. Each invoice number flows through to the packing slip when the order is linked.</p>
+              <!-- Metadata fields grouped together with a section divider -->
+              <div class="grid-3" style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
+                <div class="field-group">
+                  <label for="order-date">Order Date *</label>
+                  <input id="order-date" type="date" required>
+                </div>
+                <div class="field-group">
+                  <label for="order-custom-id">Order Number (Optional)</label>
+                  <input type="text" id="order-custom-id" placeholder="e.g. SO-1002 (blank to auto-generate)">
+                </div>
+                <div class="field-group">
+                  <label for="order-invoice-numbers">Invoice Numbers (Optional)</label>
+                  <input type="text" id="order-invoice-numbers" placeholder="e.g. INV-2025-001, INV-2025-002">
+                  <p class="text-muted" style="font-size: 0.72rem; margin-top: 0.25rem; line-height: 1.3;">Attached to the order and linked to packing slips.</p>
+                </div>
               </div>
 
               <!-- Client suggestions sparkles panel -->
