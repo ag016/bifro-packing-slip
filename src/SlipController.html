@@ -348,25 +348,63 @@ function doSaveSlip(slip) {
     .savePackingSlip(slip);
 }
 
+/**
+ * Returns a restore function for the given button. While busy, the button
+ * shows a spinner + "Generating PDF..." label and ignores further clicks.
+ * Callers must invoke the restore once the PDF has finished rendering
+ * (or failed) so the user can re-trigger the action.
+ */
+function _setPrintBusy(buttonEl) {
+  if (!buttonEl) return function restore() {};
+  const prevHtml = buttonEl.innerHTML;
+  const prevDisabled = !!buttonEl.disabled;
+  buttonEl.disabled = true;
+  buttonEl.innerHTML = '<span class="spinner"></span> Generating PDF...';
+  let restored = false;
+  return function restore() {
+    if (restored) return;
+    restored = true;
+    buttonEl.disabled = prevDisabled;
+    buttonEl.innerHTML = prevHtml;
+    if (window.lucide) {
+      try { window.lucide.createIcons(); } catch (e) {}
+    }
+  };
+}
+
 function printCurrentSlip() {
+  const restore = _setPrintBusy($('#btn-print-slip'));
   if (currentSlip) {
     let s = currentSlip;
     if (!Array.isArray(s.invoiceNumbers)) {
       s = Object.assign({}, currentSlip, { invoiceNumbers: invoiceNumbers.slice() });
     }
-    generatePDFFromSlip(s, settings);
+    try {
+      generatePDFFromSlip(s, settings, restore);
+    } catch (e) {
+      restore();
+      handleError(e);
+    }
   } else {
+    restore();
     toast('No slip is currently loaded to print.', 'warning');
   }
 }
 
-function printSlipByCode(slipCode) {
-  const s = slips.find(x => x.slipCode === slipCode);
-  if (!s) {
-    toast('Packing slip code ' + slipCode + ' not found.', 'danger');
-    return;
+function printSlipByCode(slipCode, anchorEl) {
+  const restore = _setPrintBusy(anchorEl);
+  try {
+    const s = slips.find(x => x.slipCode === slipCode);
+    if (!s) {
+      restore();
+      toast('Packing slip code ' + slipCode + ' not found.', 'danger');
+      return;
+    }
+    generatePDFFromSlip(s, settings, restore);
+  } catch (e) {
+    restore();
+    handleError(e);
   }
-  generatePDFFromSlip(s, settings);
 }
 
 function resetSlipForm() {
@@ -568,41 +606,75 @@ function enrichSlipPreviewAsync(s, linkedIds, seq) {
     const tbody = $('#slip-preview-items-tbody');
     if (!tbody) return;
     const rows = tbody.querySelectorAll('tr');
+    let totalOrdered = 0;
+    let totalPreviouslyDispatched = 0;
     rows.forEach(function (row) {
-      const nameCell = row.children[0];
-      const orderedCell = row.children[1];
-      const dispatchedCell = row.children[2];
-      const name = nameCell ? nameCell.querySelector('div') : null;
-      const productName = name ? String(name.textContent || '').trim() : '';
+      // Layout: 0=#, 1=Name, 2=Description, 3=Ordered, 4=Previously, 5=Dispatched
+      const nameCell = row.children[1];
+      const orderedCell = row.children[3];
+      const prevCell = row.children[4];
+      const dispatchedCell = row.children[5];
+      const productName = nameCell ? String(nameCell.textContent || '').trim() : '';
       const stat = stats && stats[productName];
-      // Only fill the Ordered column when the item is mapped to one of our
-      // linked orders. Otherwise show a dash.
-      if (!orderedCell) return;
-      if (!stat || !(stat.ordered)) {
-        orderedCell.innerHTML = '<span class="muted-dash">—</span>';
-        return;
-      }
-      const orderedQty = Number(stat.ordered || 0);
-      const delivered = Number(stat.delivered || 0);
       const dispatchedQty = parseInt(dispatchedCell ? dispatchedCell.textContent : '0', 10) || 0;
-      let badgeClass = 'badge-secondary';
-      let badgeText = '';
-      if (orderedQty <= 0) {
-        badgeText = '';
-      } else if (delivered + dispatchedQty >= orderedQty) {
-        badgeClass = 'badge-success';
-        badgeText = 'Fulfilled';
-      } else {
-        badgeClass = 'badge-warning';
-        badgeText = (orderedQty - (delivered + dispatchedQty)) + ' pending';
+
+      // Ordered column: only fill when the item maps to one of the linked
+      // orders, otherwise show a muted dash.
+      if (orderedCell) {
+        if (!stat || !Number(stat.ordered || 0)) {
+          orderedCell.innerHTML = '<span class="muted-dash">—</span>';
+        } else {
+          const orderedQty = Number(stat.ordered || 0);
+          const delivered = Number(stat.delivered || 0);
+          let badgeClass = 'badge-secondary';
+          let badgeText = '';
+          if (orderedQty <= 0) {
+            badgeText = '';
+          } else if (delivered + dispatchedQty >= orderedQty) {
+            badgeClass = 'badge-success';
+            badgeText = 'Fulfilled';
+          } else {
+            badgeClass = 'badge-warning';
+            badgeText = (orderedQty - (delivered + dispatchedQty)) + ' pending';
+          }
+          orderedCell.innerHTML = `
+            <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+              <strong>${orderedQty}</strong>
+              ${badgeText ? `<span class="badge ${badgeClass}" style="font-size:0.65rem; padding:1px 4px;">${badgeText}</span>` : ''}
+            </div>
+          `;
+          totalOrdered += orderedQty;
+        }
       }
-      orderedCell.innerHTML = `
-        <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
-          <strong>${orderedQty}</strong>
-          ${badgeText ? `<span class="badge ${badgeClass}" style="font-size:0.65rem; padding:1px 4px;">${badgeText}</span>` : ''}
-        </div>
-      `;
+
+      // Previously Dispatched column: only fill when the item maps to a
+      // linked order, otherwise muted dash.
+      if (prevCell) {
+        if (!stat || !Number(stat.delivered || 0)) {
+          prevCell.innerHTML = '<span class="muted-dash">—</span>';
+        } else {
+          const prevQty = Number(stat.delivered || 0);
+          prevCell.innerHTML = '<strong>' + prevQty + '</strong>';
+          totalPreviouslyDispatched += prevQty;
+        }
+      }
     });
+
+    // Patch totals row (the only row in tfoot).
+    const totalsRow = $('#slip-preview-table tfoot tr');
+    if (!totalsRow) return;
+    const orderedTotalCell = totalsRow.querySelector('.ordered-total-cell');
+    const prevTotalCell = totalsRow.querySelector('.prev-total-cell');
+    if (orderedTotalCell) {
+      orderedTotalCell.innerHTML = totalOrdered > 0
+        ? '<strong>' + totalOrdered + '</strong>'
+        : '<span class="muted-dash">—</span>';
+    }
+    if (prevTotalCell) {
+      prevTotalCell.innerHTML = totalPreviouslyDispatched > 0
+        ? '<strong>' + totalPreviouslyDispatched + '</strong>'
+        : '<span class="muted-dash">—</span>';
+    }
   }
 
   function patchOrderDate(metadataList) {
@@ -753,7 +825,7 @@ function renderSlips() {
               <button class="dropdown-item" onclick="duplicateSlipByCode('${s.slipCode}')" style="width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: transparent; border: none; font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                 <i data-lucide="copy" style="width: 14px; height: 14px;"></i> Duplicate
               </button>
-              <button class="dropdown-item" onclick="printSlipByCode('${s.slipCode}')" style="width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: transparent; border: none; font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+              <button class="dropdown-item" onclick="printSlipByCode('${s.slipCode}', this)" style="width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: transparent; border: none; font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                 <i data-lucide="printer" style="width: 14px; height: 14px; color: var(--accent);"></i> <span style="color: var(--accent); font-weight: 500;">PDF</span>
               </button>
             </div>
@@ -801,7 +873,7 @@ function renderSlips() {
               <button class="dropdown-item" onclick="event.stopPropagation(); duplicateSlipByCode('${s.slipCode}')" style="width: 100%; text-align: left; padding: 0.75rem 1rem; background: transparent; border: none; font-size: 0.9rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                 <i data-lucide="copy" style="width: 16px; height: 16px;"></i> Duplicate
               </button>
-              <button class="dropdown-item" onclick="event.stopPropagation(); printSlipByCode('${s.slipCode}')" style="width: 100%; text-align: left; padding: 0.75rem 1rem; background: transparent; border: none; font-size: 0.9rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+              <button class="dropdown-item" onclick="event.stopPropagation(); printSlipByCode('${s.slipCode}', this)" style="width: 100%; text-align: left; padding: 0.75rem 1rem; background: transparent; border: none; font-size: 0.9rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                 <i data-lucide="printer" style="width: 16px; height: 16px; color: var(--accent);"></i> <span style="color: var(--accent); font-weight: 500;">PDF</span>
               </button>
             </div>
@@ -946,23 +1018,26 @@ function viewSlipByCode(slipCode) {
         <table class="preview-table" id="slip-preview-table">
           <thead>
             <tr>
-              <th>Item Description</th>
-              <th class="text-center" style="width: 90px;">Ordered</th>
-              <th class="text-center" style="width: 90px;">Dispatched</th>
+              <th class="text-center" style="width: 36px;">#</th>
+              <th>Product Name</th>
+              <th>Description</th>
+              <th class="text-center" style="width: 86px;">Ordered</th>
+              <th class="text-center" style="width: 96px;">Previously Dispatched</th>
+              <th class="text-center" style="width: 86px;">Dispatched</th>
             </tr>
           </thead>
           <tbody id="slip-preview-items-tbody">
   `;
 
-  (s.items || []).forEach(it => {
+  (s.items || []).forEach((it, idx) => {
     html += `
       <tr>
-        <td>
-          <div style="font-weight:600;">${escapeHtml(it.name || '')}</div>
-          ${it.description ? `<div style="font-size:0.78rem; color: var(--text-muted); margin-top:2px;">${escapeHtml(it.description)}</div>` : ''}
-        </td>
+        <td class="text-center preview-row-index">${idx + 1}</td>
+        <td class="preview-name-cell"><strong>${escapeHtml(it.name || '')}</strong></td>
+        <td class="preview-desc-cell">${escapeHtml(it.description || '')}</td>
         <td class="text-center ordered-cell"><span class="muted-dash">—</span></td>
-        <td class="text-center font-semibold">${it.quantity}</td>
+        <td class="text-center prev-dispatched-cell"><span class="muted-dash">—</span></td>
+        <td class="text-center font-semibold dispatched-qty">${it.quantity}</td>
       </tr>
     `;
   });
@@ -971,7 +1046,9 @@ function viewSlipByCode(slipCode) {
           </tbody>
           <tfoot>
             <tr>
-              <td class="text-right font-semibold">Total Quantity:</td>
+              <td colspan="3" class="text-right font-semibold">Totals</td>
+              <td class="text-center font-bold font-large ordered-total-cell"><span class="muted-dash">—</span></td>
+              <td class="text-center font-bold font-large prev-total-cell"><span class="muted-dash">—</span></td>
               <td class="text-center font-bold font-large">${s.totalQuantity || (Array.isArray(s.items) ? s.items : []).reduce((a, b) => a + (parseInt(b.quantity, 10) || 0), 0)}</td>
             </tr>
           </tfoot>
@@ -1061,7 +1138,7 @@ function viewSlipByCode(slipCode) {
   html += `
     <!-- Action controls outside document -->
     <div class="modal-actions-bar">
-      <button class="btn btn-accent btn-md btn-full" onclick="printSlipByCode('${s.slipCode}')">
+      <button class="btn btn-accent btn-md btn-full" onclick="printSlipByCode('${s.slipCode}', this)">
         <i data-lucide="download"></i> Download ${isRevision ? 'Archived' : 'Official'} PDF
       </button>
       <button class="btn btn-secondary btn-md" onclick="closeModal()">

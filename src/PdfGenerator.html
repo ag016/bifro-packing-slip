@@ -187,36 +187,45 @@ function generatePDF(slip, settings) {
   // and (when the backend supplies it) a hint of how much is still pending.
   var itemStats = (slip.linkedStats) || {};
   const tableRows = (slip.items || []).map((item, idx) => {
-    var stat = itemStats[String(item.name || '').trim()];
-    var orderedCell = (stat && stat.ordered) ? String(stat.ordered) : '—';
-    var pendingCell = '';
-    if (stat && stat.ordered) {
-      var pending = Math.max(0, Number(stat.ordered || 0) - (Number(stat.delivered || 0) + Number(item.quantity || 0)));
-      pendingCell = pending > 0 ? ' (' + pending + ' pending)' : '';
-    }
-    var descriptionBlock = item.description ? '\n' + String(item.description) : '';
-    var descCell = item.name + descriptionBlock;
-    return [idx + 1, descCell, orderedCell, String(item.quantity) + pendingCell];
+    var stat = itemStats[String(item.name || '').trim()] || {};
+    var orderedQty = stat.ordered ? String(stat.ordered) : '—';
+    var prevDispatched = stat.delivered ? String(stat.delivered) : '—';
+    var thisDispatched = String(item.quantity || 0);
+    return [
+      idx + 1,
+      String(item.name || ''),
+      String(item.description || ''),
+      orderedQty,
+      prevDispatched,
+      thisDispatched
+    ];
   });
 
   doc.autoTable({
     startY: y,
     margin: { left: margin, right: margin },
-    head: [['#', 'Product / Item Description', 'Ordered', 'Dispatched']],
+    head: [[
+      '#',
+      'Product Name',
+      'Description',
+      'Ordered',
+      'Previously Dispatched',
+      'Dispatched (This Slip)'
+    ]],
     body: tableRows,
     theme: 'grid',
     headStyles: {
       fillColor: [15, 31, 58], // brand primary dark
       textColor: [255, 255, 255],
-      fontSize: 10,
+      fontSize: 9.5,
       fontStyle: 'bold',
       halign: 'left',
-      cellPadding: 8
+      cellPadding: 6
     },
     bodyStyles: {
       fontSize: 9.5,
       textColor: [51, 65, 85], // slate-700
-      cellPadding: 7,
+      cellPadding: 6,
       lineColor: [226, 232, 240],
       lineWidth: 0.4
     },
@@ -224,43 +233,48 @@ function generatePDF(slip, settings) {
       fillColor: [250, 251, 252]
     },
     columnStyles: {
-      0: { cellWidth: 30, halign: 'center' },
-      1: { cellWidth: 'auto' },
-      2: { halign: 'center', cellWidth: 70, fontStyle: 'bold' },
-      3: { halign: 'center', cellWidth: 80, fontStyle: 'bold' }
+      0: { cellWidth: 26, halign: 'center' },
+      1: { cellWidth: 'auto', halign: 'left' },
+      2: { cellWidth: 130, halign: 'left' },
+      3: { halign: 'center', cellWidth: 56, fontStyle: 'bold' },
+      4: { halign: 'center', cellWidth: 80, fontStyle: 'bold' },
+      5: { halign: 'center', cellWidth: 80, fontStyle: 'bold' }
     },
     didParseCell: function(data) {
-      if (data.section === 'head' && data.column.index === 2) {
+      // Header rows: center all amount-style columns (# and the three
+      // numeric columns to its right).
+      if (data.section === 'head' && data.column.index >= 3) {
         data.cell.styles.halign = 'center';
       }
-      if (data.section === 'head' && data.column.index === 3) {
-        data.cell.styles.halign = 'center';
-      }
-      // Render an item description in a smaller, muted font directly under the name.
-      if (data.section === 'body' && data.column.index === 1 && data.cell.raw && String(data.cell.raw).indexOf('\n') !== -1) {
-        var lines = String(data.cell.raw).split('\n');
-        data.cell.text = lines;
-      }
-    },
-    didDrawCell: function(data) {
-      // Render description (2nd line) in muted small text underneath the product name.
-      if (data.section === 'body' && data.column.index === 1 && data.cell.raw && String(data.cell.raw).indexOf('\n') !== -1) {
-        var parts = String(data.cell.raw).split('\n');
-        if (parts.length > 1) {
-          var nameY = data.cell.y + data.cell.height / 2 - 2;
-          doc.setFont('Helvetica', 'bold');
-          doc.setFontSize(9.5);
-          doc.setTextColor(15, 23, 42);
-          doc.text(parts[0], data.cell.x + 4, nameY);
-          if (parts[1]) {
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(8);
-            doc.setTextColor(100, 116, 139);
-            doc.text(parts[1], data.cell.x + 4, nameY + 11);
+      if (data.section === 'body') {
+        if (data.column.index === 0) {
+          // # column: muted centered
+          data.cell.styles.halign = 'center';
+          data.cell.styles.textColor = [100, 116, 139];
+          data.cell.styles.fontStyle = 'normal';
+        }
+        if (data.column.index === 1) {
+          // Product Name: bold, dark slate
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.textColor = [15, 23, 42];
+        }
+        if (data.column.index === 2) {
+          // Description: small muted font
+          data.cell.styles.fontSize = 8.5;
+          data.cell.styles.textColor = [100, 116, 139];
+          data.cell.styles.fontStyle = 'normal';
+        }
+        if (data.column.index >= 3) {
+          // Amount columns: centered + bold; muted dash when no link mapping
+          data.cell.styles.halign = 'center';
+          data.cell.styles.fontStyle = 'bold';
+          if (data.cell.raw === '—' || data.cell.raw === '') {
+            data.cell.styles.textColor = [148, 163, 184];
+            data.cell.styles.fontStyle = 'normal';
           }
         }
       }
-    },
+    }
   });
 
   // Calculate final Y position after the autoTable finishes
@@ -271,17 +285,25 @@ function generatePDF(slip, settings) {
   doc.setFontSize(10.5);
   doc.setTextColor(15, 23, 42); // slate-900
 
-  // Sum "Dispatched" column (this slip only) and "Ordered" column when present.
+  // Sum dispatched (this slip) and the linked shipped counts so the totals
+  // line matches the new 3 amount columns.
   let totalDispatched = 0;
   let totalOrdered = 0;
+  let totalPreviouslyDispatched = 0;
   (slip.items || []).forEach(function (item) {
     totalDispatched += Number(item.quantity || 0);
     var stat = itemStats[String(item.name || '').trim()];
     if (stat && stat.ordered) totalOrdered += Number(stat.ordered || 0);
+    if (stat && stat.delivered) totalPreviouslyDispatched += Number(stat.delivered || 0);
   });
-  const totalQtyText = (totalOrdered > 0
-    ? 'Total Ordered: ' + totalOrdered + '   |   Total Dispatched (this slip): ' + totalDispatched
-    : 'Total Quantity: ' + totalDispatched);
+
+  // Compose totals in a fixed order so the line reads naturally regardless
+  // of how many pieces are populated.
+  const totalsPrefix = [];
+  if (totalOrdered > 0) totalsPrefix.push('Total Ordered: ' + totalOrdered);
+  if (totalPreviouslyDispatched > 0) totalsPrefix.push('Previously Dispatched: ' + totalPreviouslyDispatched);
+  totalsPrefix.push('Dispatched (This Slip): ' + totalDispatched);
+  const totalQtyText = totalsPrefix.join('   |   ');
   doc.text(totalQtyText, margin, finalY);
   finalY += 20;
 
@@ -352,33 +374,48 @@ function generatePDF(slip, settings) {
 }
 
 /**
- * Async wrapper that fetches ordered-vs-dispatched stats + linked-order
- * metadata, then renders the PDF. Existing call sites pass a slip that may
- * not yet carry `linkedStats` / `linkedOrderMeta`, so we lazy-load them.
+ * Async wrapper that fetches enriched stats + linked-order metadata in a
+ * single round trip via getSlipPDFEnrichment, then renders the PDF. The
+ * optional `onRendered` callback fires after PDF generation (or on failure)
+ * so callers can re-enable a busy-state button. Existing call sites pass a
+ * slip that may already carry `linkedStats` / `linkedOrderMeta`, in which
+ * case we skip the server round trip and render immediately.
  */
-function generatePDFFromSlip(slip, settings) {
+function generatePDFFromSlip(slip, settings, onRendered) {
+  function done() {
+    if (typeof onRendered === 'function') {
+      try { onRendered(); } catch (e) { /* swallow restore errors */ }
+    }
+  }
+  function renderWith(enrich) {
+    enrich = enrich || {};
+    var augmented = Object.assign({}, slip, {
+      linkedStats: enrich.stats || {},
+      linkedOrderMeta: enrich.orderMeta || []
+    });
+    try { generatePDF(augmented, settings); } finally { done(); }
+  }
   var linkedIds = (slip && slip.linkedOrders ? String(slip.linkedOrders || '') : '')
     .split(',').map(function (s) { return String(s || '').trim(); }).filter(Boolean);
   if (!linkedIds.length || !slip.clientId) {
-    generatePDF(slip, settings);
+    // Not linked to any order: render straight away, no enrichment needed.
+    try { generatePDF(slip, settings); } finally { done(); }
     return;
   }
-  var pending = 2;
-  var stats = slip.linkedStats || {};
-  var orderMeta = slip.linkedOrderMeta || [];
-  function maybeRun() {
-    if (--pending === 0) {
-      var augmented = Object.assign({}, slip, { linkedStats: stats, linkedOrderMeta: orderMeta });
-      generatePDF(augmented, settings);
-    }
-  }
   google.script.run
-    .withSuccessHandler(function (s) { stats = s || {}; maybeRun(); })
-    .withFailureHandler(function () { maybeRun(); })
-    .getLinkedDeliveryStats(slip.clientId, linkedIds, slip.slipCode);
-  google.script.run
-    .withSuccessHandler(function (m) { orderMeta = m || []; maybeRun(); })
-    .withFailureHandler(function () { maybeRun(); })
-    .getLinkedOrderMetadata(linkedIds);
+    .withSuccessHandler(renderWith)
+    .withFailureHandler(function (err) {
+      // Best-effort render with whatever enrichment the client already has,
+      // so the user still gets a PDF even if the server round trip failed.
+      try {
+        generatePDF(slip, settings);
+      } catch (renderErr) {
+        // Surface to caller if they want to handle; for safety also log.
+        try { console.warn('PDF render after enrichment failure failed:', renderErr); } catch (e) {}
+      } finally {
+        done();
+      }
+    })
+    .getSlipPDFEnrichment(slip);
 }
 </script>

@@ -1161,6 +1161,89 @@ function getLinkedOrderMetadata(orderIds) {
 }
 
 /**
+ * Single-call enrichment for print + preview rendering. Replaces the older
+ * pattern of two parallel round trips (getLinkedDeliveryStats +
+ * getLinkedOrderMetadata) which each did a full sheet scan. This pass loads
+ * Orders + PackingSlips once and folds the work into a single return so the
+ * PDF can render in one round trip.
+ *
+ * Input: a slip object (only `linkedOrders`, `clientId` and `slipCode` are
+ * actually consulted; everything else is ignored).
+ *
+ * Output: { stats: {productName: {ordered, delivered, description, orderId, orderDate}},
+ *           orderMeta: [{id, date, clientId, clientName}, ...] }
+ *
+ * - `delivered` counts qty on other slips linked to the same order IDs, with
+ *   the slip itself excluded when a code is provided so it is not
+ *   double-counted as both this slip AND a previous one.
+ */
+function getSlipPDFEnrichment(slip) {
+  checkLicenseOrThrow();
+  if (!slip) return { stats: {}, orderMeta: [] };
+
+  var linkedIds = String(slip.linkedOrders || '')
+    .split(',').map(function (s) { return String(s || '').trim(); }).filter(Boolean);
+  var clientId = String(slip.clientId || '');
+  if (!linkedIds.length || !clientId) return { stats: {}, orderMeta: [] };
+
+  var targetSet = {};
+  linkedIds.forEach(function (id) { targetSet[id] = true; });
+  var excludeSet = {};
+  var selfCode = String(slip.slipCode || '').trim();
+  if (selfCode) excludeSet[selfCode] = true;
+
+  // Single-pass over orders + slips; both lists are typically small enough
+  // that two arrays in memory is fine, and we avoid two round trips on the
+  // wire plus two redundant sheet reads that the previous pair of functions
+  // each performed.
+  var dbOrders = getOrders();
+  var dbSlips = getPackingSlips();
+
+  var stats = {};
+  var orderMeta = [];
+
+  dbOrders.forEach(function (order) {
+    if (!targetSet[order.id]) return;
+    orderMeta.push({
+      id: order.id,
+      date: order.date || '',
+      clientId: order.clientId || '',
+      clientName: order.clientName || ''
+    });
+    (order.items || []).forEach(function (item) {
+      var name = String(item.name || '').trim();
+      if (!name) return;
+      if (!stats[name]) {
+        stats[name] = { ordered: 0, delivered: 0, description: '', orderId: order.id, orderDate: order.date || '' };
+      }
+      stats[name].ordered += Number(item.quantity || 0);
+      if (!stats[name].description && item.description) {
+        stats[name].description = String(item.description);
+      }
+    });
+  });
+
+  dbSlips.forEach(function (s) {
+    if (s.slipCode.indexOf('-rev') !== -1) return;
+    if (excludeSet[s.slipCode]) return;
+    (s.items || []).forEach(function (item) {
+      if (!item.orderId || !targetSet[item.orderId]) return;
+      var name = String(item.name || '').trim();
+      if (!name) return;
+      if (!stats[name]) {
+        stats[name] = { ordered: 0, delivered: 0, description: '', orderId: item.orderId, orderDate: '' };
+      }
+      stats[name].delivered += Number(item.quantity || 0);
+      if (!stats[name].description && item.description) {
+        stats[name].description = String(item.description);
+      }
+    });
+  });
+
+  return { stats: stats, orderMeta: orderMeta };
+}
+
+/**
  * Recalculates order statuses (Pending / Partially Delivered / Completed)
  * after a packing slip has been saved. Called from savePackingSlip so that
  * order statuses stay in sync with delivered quantities on linked slips.
