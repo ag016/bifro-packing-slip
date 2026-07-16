@@ -260,12 +260,7 @@ function generatePDF(slip, settings) {
           }
         }
       }
-    }
-    didParseCell: function(data) {
-      if (data.section === 'head' && data.column.index === 2) {
-        data.cell.styles.halign = 'center';
-      }
-    }
+    },
   });
 
   // Calculate final Y position after the autoTable finishes
