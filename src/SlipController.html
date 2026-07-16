@@ -35,7 +35,7 @@ function addItemRow(name, qty, scrollToRow, orderId, description, ordered) {
     </div>
     <div class="field-group flex-1">
       <label for="${id}-qty" class="label-inline">Dispatched Qty</label>
-      <input type="number" id="${id}-qty" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty || 1}" oninput="updateRowBalanceHint('${id}')" required>
+      <input type="number" id="${id}-qty" class="item-qty" placeholder="Qty" min="1" step="1" value="${(qty === '' || qty === null || qty === undefined) ? '' : qty}" oninput="updateRowBalanceHint('${id}')" required>
     </div>
     <div class="btn-delete-container">
       <button type="button" class="btn-icon btn-danger-soft" onclick="removeItemRow(this)" title="Remove Item">
@@ -476,17 +476,25 @@ function _setButtonBusy(buttonEl, busyLabel) {
  * feedback. Pair every showPdfLoading() with a hidePdfLoading() in the
  * completion path so the overlay never stays up.
  */
-function showPdfLoading() {
+function showLoading(text) {
   try {
     const ov = document.getElementById('pdf-loading-overlay');
+    const txt = document.getElementById('pdf-loading-text');
+    if (txt) txt.textContent = text || 'Processing...';
     if (ov) ov.style.display = '';
   } catch (e) {}
 }
-function hidePdfLoading() {
+function hideLoading() {
   try {
     const ov = document.getElementById('pdf-loading-overlay');
     if (ov) ov.style.display = 'none';
   } catch (e) {}
+}
+function showPdfLoading() {
+  showLoading('Generating PDF…');
+}
+function hidePdfLoading() {
+  hideLoading();
 }
 
 // Back-compat alias kept for any old call sites.
@@ -1738,6 +1746,8 @@ function linkOrder(orderId) {
     orderNumField.value = orderId;
   }
 
+  showLoading('Linking Order...');
+
   // Pull items of the linked order
   google.script.run
     .withSuccessHandler(list => {
@@ -1775,7 +1785,8 @@ function linkOrder(orderId) {
               });
               const remaining = Math.max(0, ordered - delivered);
               if (remaining > 0 || delivered === 0) {
-                addItemRow(item.name, remaining, false, orderId, '');
+                // Pass '' for dispatched qty, and remaining for ordered qty!
+                addItemRow(item.name, '', false, orderId, '', remaining);
               }
             });
             // Auto-pull the order's invoice numbers onto the slip if not already present
@@ -1784,13 +1795,23 @@ function linkOrder(orderId) {
             }
             renderInvoiceNumberTags();
             refreshLinkedStats();
+            hideLoading();
             closeLinkOrderModal();
+          })
+          .withFailureHandler(err => {
+            hideLoading();
+            handleError(err);
           })
           .getPackingSlips();
       } else {
         refreshLinkedStats();
+        hideLoading();
         closeLinkOrderModal();
       }
+    })
+    .withFailureHandler(err => {
+      hideLoading();
+      handleError(err);
     })
     .getOrders();
 }
