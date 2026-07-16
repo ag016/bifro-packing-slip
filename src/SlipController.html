@@ -560,6 +560,18 @@ function resetSlipForm() {
   $('#slip-date').valueAsDate = new Date();
 }
 
+function handleSlipClientChange() {
+  if (typeof toggleNewClient === 'function') toggleNewClient();
+  
+  // Clear linkage data since client changed
+  linkedOrderIds = [];
+  currentLinkedStats = {};
+  renderLinkedTags();
+  
+  // Reset all row balance hints to remove old status bars
+  updateAllRowBalanceHints();
+}
+
 function hydrateInvoiceNumbersFromSlip(slip) {
   if (!slip) return [];
   if (Array.isArray(slip.invoiceNumbers)) {

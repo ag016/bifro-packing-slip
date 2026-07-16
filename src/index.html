@@ -551,7 +551,7 @@
               <div class="field-group-container" style="display: flex; align-items: flex-end; gap: 8px;">
                 <div class="field-group" style="flex: 1;">
                   <label for="slip-client">Select Client *</label>
-                  <select id="slip-client" required onchange="toggleNewClient()">
+                  <select id="slip-client" required onchange="handleSlipClientChange()">
                     <option value="">-- Choose Client --</option>
                   </select>
                 </div>
@@ -591,26 +591,24 @@
                 </div>
               </div>
 
-              <!-- Date + consolidated Invoice Numbers (chip panel lives here at the top) -->
-              <div class="grid-2" style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
+              <!-- Metadata: Date, Invoice Numbers, and Order Number in one clean line -->
+              <div class="grid-3" style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
                 <div class="field-group">
                   <label for="slip-date">Invoice / Shipment Date</label>
                   <input id="slip-date" type="date" required>
                 </div>
                 <div class="field-group">
                   <label for="slip-invoice-quick">Invoice Numbers <span class="text-muted" style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
-                  <input id="slip-invoice-quick" type="text" placeholder="Type a number then press Enter (or ,) to add" onkeydown="if(event.key==='Enter'||event.key===','){event.preventDefault(); if(addInvoiceNumberTag(this.value)){renderInvoiceNumberTags();} this.value='';}">
+                  <input id="slip-invoice-quick" type="text" placeholder="Type & press Enter to add" onkeydown="if(event.key==='Enter'||event.key===','){event.preventDefault(); if(addInvoiceNumberTag(this.value)){renderInvoiceNumberTags();} this.value='';}">
                   <div id="slip-invoice-numbers-tags" class="link-tag-container" style="margin-top: 0.5rem; min-height: 1.5rem;">
                     <span class="text-muted" style="font-size:0.85rem; font-style:italic;">No invoice numbers yet</span>
                   </div>
                 </div>
-              </div>
-
-              <!-- Quick Order Number — auto-creates on save if it's new; auto-fills when linking -->
-              <div class="field-group" style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
-                <label for="slip-order-number">Order Number</label>
-                <input id="slip-order-number" type="text" placeholder="Type a new number to auto-create on save; auto-fills when you Link an Order">
-                <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.35rem;">Order numbers typed here auto-create a new Order (using this slip's items) when you Save Packing Slip, unless they're already linked. Use the row's <em>Ordered</em> column to leave leftovers for the next slip.</p>
+                <div class="field-group">
+                  <label for="slip-order-number">Order Number</label>
+                  <input id="slip-order-number" type="text" placeholder="Type to create or auto-fill on link">
+                  <p class="text-muted" style="font-size: 0.72rem; margin-top: 0.25rem; line-height: 1.3;">Auto-creates new Order on save unless already linked.</p>
+                </div>
               </div>
 
               <!-- Linked Orders strip -->
