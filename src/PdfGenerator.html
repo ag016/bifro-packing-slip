@@ -79,8 +79,9 @@ function generatePDF(slip, settings) {
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(9.5);
   doc.setTextColor(71, 85, 105); // slate-600
-  doc.text('Slip Code: ' + slip.slipCode, pageW - margin, y + 38, { align: 'right' });
-  doc.text('Dispatch Date: ' + formatDate(slip.date), pageW - margin, y + 52, { align: 'right' });
+  // Slip Code + Dispatch Date are rendered below by drawMetaRow so the layout
+  // can adapt to long values via line wrapping; do not draw them here too or
+  // they will collide with the row below.
 
   // Build the lines below: Order # / Order Date (when linked) and Invoice # (free-floating).
   // Move further down per added line so labels never collide with the title.
@@ -395,6 +396,11 @@ function generatePDF(slip, settings) {
  */
 function generatePDFFromSlip(slip, settings, onRendered) {
   function done() {
+    // Always hide the page-wide loading overlay once PDF generation ends,
+    // regardless of success or failure.
+    if (typeof hidePdfLoading === 'function') {
+      try { hidePdfLoading(); } catch (e) {}
+    }
     if (typeof onRendered === 'function') {
       try { onRendered(); } catch (e) { /* swallow restore errors */ }
     }
@@ -407,6 +413,14 @@ function generatePDFFromSlip(slip, settings, onRendered) {
     });
     try { generatePDF(augmented, settings); } finally { done(); }
   }
+
+  // Always surface a visible loading indicator while we wait on either the
+  // server round trip + render path or the synchronous render path. The
+  // overlay auto-hides via `done()` regardless of branch.
+  if (typeof showPdfLoading === 'function') {
+    try { showPdfLoading(); } catch (e) {}
+  }
+
   var linkedIds = (slip && slip.linkedOrders ? String(slip.linkedOrders || '') : '')
     .split(',').map(function (s) { return String(s || '').trim(); }).filter(Boolean);
   if (!linkedIds.length || !slip.clientId) {

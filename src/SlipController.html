@@ -358,7 +358,7 @@ function _setButtonBusy(buttonEl, busyLabel) {
   const prevHtml = buttonEl.innerHTML;
   const prevDisabled = !!buttonEl.disabled;
   buttonEl.disabled = true;
-  buttonEl.innerHTML = '<span class="spinner"></span> ' + (busyLabel || 'Working...');
+  buttonEl.innerHTML = '<span class="spinner spinner-small"></span> ' + (busyLabel || 'Working...');
   let restored = false;
   return function restore() {
     if (restored) return;
@@ -369,6 +369,26 @@ function _setButtonBusy(buttonEl, busyLabel) {
       try { window.lucide.createIcons(); } catch (e) {}
     }
   };
+}
+
+/**
+ * Shows a page-wide overlay so the user always sees loading feedback while
+ * a PDF is being generated, even after they navigated away from the print
+ * trigger. The overlay uses the larger spinner variant for unmistakable
+ * feedback. Pair every showPdfLoading() with a hidePdfLoading() in the
+ * completion path so the overlay never stays up.
+ */
+function showPdfLoading() {
+  try {
+    const ov = document.getElementById('pdf-loading-overlay');
+    if (ov) ov.style.display = '';
+  } catch (e) {}
+}
+function hidePdfLoading() {
+  try {
+    const ov = document.getElementById('pdf-loading-overlay');
+    if (ov) ov.style.display = 'none';
+  } catch (e) {}
 }
 
 // Back-compat alias kept for any old call sites.

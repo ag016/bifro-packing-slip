@@ -854,6 +854,38 @@ tr.table-row-animate:hover {
   to { transform: rotate(360deg); }
 }
 
+/* Full-page loading overlay used while a PDF is being generated. */
+.pdf-loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  animation: fadeIn 0.12s ease-out;
+}
+.pdf-loading-overlay .panel {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 1.25rem 1.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+}
+.pdf-loading-overlay .spinner-large {
+  border-color: rgba(15, 23, 42, 0.15);
+  border-top-color: var(--accent, #f59e0b);
+}
+
 /* Home Dashboard layout */
 .hero {
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
