@@ -124,7 +124,7 @@ function renderOrders() {
   tbody.innerHTML = '';
 
   if (!orders.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty">No orders found. Add an order details above to start.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No orders found. Add an order details above to start.</td></tr>';
     return;
   }
 
@@ -135,21 +135,26 @@ function renderOrders() {
     else if (o.status === 'Completed') statusClass = 'badge-success';
 
     const items = Array.isArray(o.items) ? o.items : [];
-    const itemsCount = items.length;
-    const totalQty = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-    const invoiceNums = Array.isArray(o.invoiceNumbers) ? o.invoiceNumbers : [];
-    const invoiceDisplay = invoiceNums.length
-      ? invoiceNums.map(n => `<span class="badge badge-secondary" style="margin-right:4px;">${escapeHtml(n)}</span>`).join('')
-      : '<span class="text-muted" style="font-style:italic; font-size:0.8rem;">None</span>';
+    const ordered = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const dispatched = items.reduce((sum, item) => sum + Number(item.shipped || 0), 0);
+    const remaining = Math.max(0, ordered - dispatched);
+
+    let remainingBadge = '';
+    if (remaining === 0) {
+      remainingBadge = `<span class="badge badge-success-soft" style="color: var(--success); background: rgba(34, 197, 94, 0.1);">${remaining}</span>`;
+    } else {
+      remainingBadge = `<span class="badge badge-warning-soft" style="color: var(--warning); background: rgba(245, 158, 11, 0.1); font-weight: 600;">${remaining}</span>`;
+    }
 
     const tr = document.createElement('tr');
     tr.className = 'table-row-animate';
     tr.innerHTML = `
-      <td><span class="badge badge-accent">${escapeHtml(o.id || '')}</span></td>
+      <td><span class="badge badge-accent order-id-badge" title="${escapeHtml(o.id || '')}">${escapeHtml(o.id || '')}</span></td>
       <td><strong>${formatDate(o.date)}</strong></td>
       <td>${escapeHtml(o.clientName || '')}</td>
-      <td>${itemsCount} items (${totalQty} units)</td>
-      <td>${invoiceDisplay}</td>
+      <td class="text-center"><strong>${ordered}</strong> <span class="text-muted" style="font-size:0.75rem;">(${items.length} items)</span></td>
+      <td class="text-center"><strong>${dispatched}</strong></td>
+      <td class="text-center">${remainingBadge}</td>
       <td><span class="badge ${statusClass}">${escapeHtml(o.status || 'Pending')}</span></td>
       <td>
         <div style="display:flex; gap: 4px;">

@@ -396,12 +396,16 @@
             <form id="order-form" onsubmit="event.preventDefault(); saveOrderSubmit();">
               <input type="hidden" id="order-edit-id" value="">
               <div class="grid-3">
-                <div class="field-group">
-                  <label for="order-client">Select Client *</label>
-                  <select id="order-client" required onchange="toggleNewOrderClient()">
-                    <option value="">-- Choose Client --</option>
-                    <option value="new">+ Add new client</option>
-                  </select>
+                <div class="field-group-container" style="display: flex; align-items: flex-end; gap: 8px;">
+                  <div class="field-group" style="flex: 1;">
+                    <label for="order-client">Select Client *</label>
+                    <select id="order-client" required onchange="toggleNewOrderClient()">
+                      <option value="">-- Choose Client --</option>
+                    </select>
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-md" id="btn-toggle-new-order-client" onclick="toggleNewOrderClientBtn()" style="height: 42px; padding: 0 12px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;" title="Add new client">
+                    <i data-lucide="plus" style="width: 16px; height: 16px; margin-right: 4px;"></i> Add Client
+                  </button>
                 </div>
                 <div class="field-group">
                   <label for="order-date">Order Date *</label>
@@ -480,16 +484,18 @@
               <table id="orders-table">
                 <thead>
                   <tr>
-                    <th>Order ID</th>
+                    <th style="max-width: 120px;">Order ID</th>
                     <th>Date</th>
                     <th>Client Name</th>
-                    <th>Items Count</th>
+                    <th class="text-center">Ordered</th>
+                    <th class="text-center">Dispatched</th>
+                    <th class="text-center">Remaining</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr><td colspan="6" class="empty">Loading orders...</td></tr>
+                  <tr><td colspan="8" class="empty">Loading orders...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -502,11 +508,16 @@
             <h2 id="slip-form-title"><i data-lucide="file-plus" style="color:var(--accent);"></i> Create New Packing Slip</h2>
             <form id="slip-form" onsubmit="event.preventDefault(); savePackingSlip();">
               
-              <div class="field-group">
-                <label for="slip-client">Select Client *</label>
-                <select id="slip-client" required onchange="toggleNewClient()">
-                  <option value="new">+ Add new client</option>
-                </select>
+              <div class="field-group-container" style="display: flex; align-items: flex-end; gap: 8px;">
+                <div class="field-group" style="flex: 1;">
+                  <label for="slip-client">Select Client *</label>
+                  <select id="slip-client" required onchange="toggleNewClient()">
+                    <option value="">-- Choose Client --</option>
+                  </select>
+                </div>
+                <button type="button" class="btn btn-secondary btn-md" id="btn-toggle-new-slip-client" onclick="toggleNewSlipClientBtn()" style="height: 42px; padding: 0 12px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;" title="Add new client">
+                  <i data-lucide="plus" style="width: 16px; height: 16px; margin-right: 4px;"></i> Add Client
+                </button>
               </div>
 
               <div style="height: 1.25rem;"></div>

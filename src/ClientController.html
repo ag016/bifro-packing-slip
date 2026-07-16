@@ -156,7 +156,7 @@ function populateClientSelect() {
   const selSlip = $('#slip-client');
   if (selSlip) {
     const current = selSlip.value;
-    selSlip.innerHTML = '<option value="new" class="bold-option">+ Add new client</option>';
+    selSlip.innerHTML = '<option value="">-- Choose Client --</option>';
     clients.forEach(c => {
       const opt = document.createElement('option');
       opt.value = c.id;
@@ -181,19 +181,16 @@ function populateClientSelect() {
   }
 }
 
-function toggleNewClient() {
+function toggleNewSlipClientBtn() {
   const div = $('#new-client-fields');
   if (!div) return;
-  const selectVal = $('#slip-client').value;
-
-  // Inline new-client panel only shows when the user picks "+ Add new client".
-  // Selecting an existing client hides the panel so it can't masquerade as an
-  // edit form for the chosen client.
-  if (selectVal === 'new') {
+  const isHidden = div.style.display === 'none';
+  if (isHidden) {
     div.style.display = 'block';
-    if ($('#new-client-name')) $('#new-client-name').required = true;
-    // Always start blank so the user fills in the new client's details.
-    if ($('#new-client-name')) $('#new-client-name').value = '';
+    if ($('#new-client-name')) {
+      $('#new-client-name').required = true;
+      $('#new-client-name').value = '';
+    }
     if ($('#new-client-company')) $('#new-client-company').value = '';
     if ($('#new-client-phone')) $('#new-client-phone').value = '';
     if ($('#new-client-address')) $('#new-client-address').value = '';
@@ -204,13 +201,51 @@ function toggleNewClient() {
       if (nm) nm.focus();
     }, 50);
   } else {
-    // Any other selection (existing client id or empty) hides the inline panel.
     div.style.display = 'none';
     if ($('#new-client-name')) $('#new-client-name').required = false;
-    if ($('#new-client-name')) $('#new-client-name').value = '';
-    if ($('#new-client-company')) $('#new-client-company').value = '';
-    if ($('#new-client-phone')) $('#new-client-phone').value = '';
-    if ($('#new-client-address')) $('#new-client-address').value = '';
+  }
+}
+
+function toggleNewClient() {
+  // Hide the inline client creation card if the user picks any existing client
+  const div = $('#new-client-fields');
+  if (div) {
+    div.style.display = 'none';
+    if ($('#new-client-name')) $('#new-client-name').required = false;
+  }
+}
+
+function toggleNewOrderClientBtn() {
+  const div = $('#new-order-client-fields');
+  if (!div) return;
+  const isHidden = div.style.display === 'none';
+  if (isHidden) {
+    div.style.display = 'block';
+    if ($('#new-order-client-name')) {
+      $('#new-order-client-name').required = true;
+      $('#new-order-client-name').value = '';
+    }
+    if ($('#new-order-client-company')) $('#new-order-client-company').value = '';
+    if ($('#new-order-client-phone')) $('#new-order-client-phone').value = '';
+    if ($('#new-order-client-address')) $('#new-order-client-address').value = '';
+    setTimeout(function () {
+      try { div.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+      try { highlightElement(div); } catch (e) {}
+      const nm = $('#new-order-client-name');
+      if (nm) nm.focus();
+    }, 50);
+  } else {
+    div.style.display = 'none';
+    if ($('#new-order-client-name')) $('#new-order-client-name').required = false;
+  }
+}
+
+function toggleNewOrderClient() {
+  // Hide the inline client creation card if the user picks any existing client
+  const div = $('#new-order-client-fields');
+  if (div) {
+    div.style.display = 'none';
+    if ($('#new-order-client-name')) $('#new-order-client-name').required = false;
   }
 }
 </script>

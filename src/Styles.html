@@ -739,7 +739,7 @@ tr.table-row-animate:hover {
 /* Form Item dynamic grid list */
 .item-row {
   display: grid;
-  grid-template-columns: 3fr 1fr 45px;
+  grid-template-columns: 3fr 1.2fr 1.2fr 45px;
   gap: 1rem;
   align-items: flex-end;
   margin-bottom: 0.75rem;
@@ -753,6 +753,15 @@ tr.table-row-animate:hover {
   align-items: flex-end;
   margin-bottom: 0.75rem;
   position: relative;
+}
+
+.order-id-badge {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 .field-group {
