@@ -93,16 +93,12 @@ function generatePDF(slip, settings) {
 
   var baseY = y + 66;
 
-  // Right-side metadata layout: labels right-aligned in a fixed column
-  // (~86pt) flush against the right margin; values left-aligned just to the
-  // left of the label column, wrapping with splitTextToSize when they
-  // outgrow the available width. This stops long order numbers like
-  // "OR-2C260702009-01" from colliding with the label or the row below.
-  var labelColumnEnd = pageW - margin;        // right edge of the metadata block
-  var labelColumnWidth = 86;                 // reserved width for the label column
-  var valueColumnEnd = labelColumnEnd - labelColumnWidth - 6;  // where value text begins (left edge)
-  var valueColumnLeftEdge = 250;             // safe inner bound so values stay clear of the company-info column
-  var valueMaxWidth = Math.max(60, valueColumnEnd - valueColumnLeftEdge);
+  // Right-side metadata layout: labels right-aligned ending at labelEndX;
+  // values left-aligned starting at valueStartX, wrapping with splitTextToSize.
+  // This guarantees labels and values never overlap.
+  var labelEndX = pageW - margin - 105;      // right edge of the label text
+  var valueStartX = labelEndX + 8;            // left edge of the value text
+  var valueMaxWidth = pageW - margin - valueStartX; // space to wrap values (about 97pt)
 
   function drawMetaRow(label, valueText, opts) {
     if (!valueText) return;
@@ -110,11 +106,11 @@ function generatePDF(slip, settings) {
     if (!text.trim()) return;
     doc.setFont('Helvetica', 'bold');
     doc.setTextColor(30, 58, 95);
-    doc.text(label + ':', labelColumnEnd, baseY, { align: 'right' });
+    doc.text(label + ':', labelEndX, baseY, { align: 'right' });
     doc.setFont('Helvetica', 'normal');
     doc.setTextColor(71, 85, 105);
     var lines = doc.splitTextToSize(text, valueMaxWidth);
-    doc.text(lines, valueColumnEnd, baseY);
+    doc.text(lines, valueStartX, baseY);
     // Grow baseY per actual line so the row never overlaps the next row.
     baseY += Math.max(14, 14 * lines.length);
     if (opts && opts.interRow) baseY += opts.interRow;
