@@ -4,7 +4,7 @@
  * Form management, item grids, searching, filtering, and previewing
  */
 
-function addItemRow(name, qty, scrollToRow, orderId) {
+function addItemRow(name, qty, scrollToRow, orderId, description) {
   const container = $('#items-container');
   if (!container) return;
 
@@ -17,12 +17,14 @@ function addItemRow(name, qty, scrollToRow, orderId) {
 
   row.innerHTML = `
     <div class="field-group flex-3">
-      <label for="${id}-name" class="label-inline">Product Description</label>
+      <label for="${id}-name" class="label-inline">Product Name</label>
       <input type="text" id="${id}-name" class="item-name" placeholder="Start typing product name..." value="${escapeHtml(name || '')}" list="suggestions-list" oninput="updateRowBalanceHint('${id}')" required>
+      <label for="${id}-desc" class="label-inline" style="margin-top: 0.35rem;">Description (optional)</label>
+      <input type="text" id="${id}-desc" class="item-description" placeholder="e.g. 20x30 inch, polyester, color..." value="${escapeHtml(description || '')}">
       <div id="${id}-balance-container" class="item-balance-hint"></div>
     </div>
     <div class="field-group flex-1">
-      <label for="${id}-qty" class="label-inline">Quantity</label>
+      <label for="${id}-qty" class="label-inline">Dispatched Qty</label>
       <input type="number" id="${id}-qty" class="item-qty" placeholder="Qty" min="1" step="1" value="${qty || 1}" oninput="updateRowBalanceHint('${id}')" required>
     </div>
     <div class="btn-delete-container">
@@ -184,7 +186,9 @@ function gatherItems() {
 
     row.dataset.removeBlank = 'false';
     const orderId = row.dataset.orderId || '';
-    items.push({ name, quantity, orderId });
+    const descEl = row.querySelector('.item-description');
+    const description = descEl ? String(descEl.value || '').trim() : '';
+    items.push({ name, quantity, orderId, description });
   });
 
   // Remove blank rows from the DOM
@@ -350,7 +354,7 @@ function printCurrentSlip() {
     if (!Array.isArray(s.invoiceNumbers)) {
       s = Object.assign({}, currentSlip, { invoiceNumbers: invoiceNumbers.slice() });
     }
-    generatePDF(s, settings);
+    generatePDFFromSlip(s, settings);
   } else {
     toast('No slip is currently loaded to print.', 'warning');
   }
@@ -362,7 +366,7 @@ function printSlipByCode(slipCode) {
     toast('Packing slip code ' + slipCode + ' not found.', 'danger');
     return;
   }
-  generatePDF(s, settings);
+  generatePDFFromSlip(s, settings);
 }
 
 function resetSlipForm() {
@@ -438,7 +442,7 @@ function loadSlipForEdit(slipCode) {
   refreshLinkedStats(() => {
     $('#items-container').innerHTML = '';
     if (slip.items && slip.items.length) {
-      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId));
+      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId, it.description));
     } else {
       addItemRow('', 1, false);
     }
@@ -487,7 +491,7 @@ function duplicateSlipByCode(slipCode) {
   refreshLinkedStats(() => {
     $('#items-container').innerHTML = '';
     if (slip.items && slip.items.length) {
-      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId));
+      slip.items.forEach(it => addItemRow(it.name, it.quantity, false, it.orderId, it.description));
     } else {
       addItemRow('', 1, false);
     }
@@ -542,6 +546,91 @@ function populateFilterClient() {
     sel.appendChild(opt);
   });
   sel.value = current;
+}
+
+/**
+ * After the slip preview modal is rendered (synchronously), enrich it with
+ * ordered-vs-dispatched numbers and the linked-order date. Both lookups are
+ * batched server-side so the in-app preview matches the printed PDF.
+ *
+ * @param {object} s         the slip being previewed
+ * @param {string[]} linkedIds  unpicked order IDs linked to this slip
+ * @param {number}  seq       monotonic id used to ignore stale responses
+ */
+function enrichSlipPreviewAsync(s, linkedIds, seq) {
+  const clientId = s.clientId || '';
+  if (!clientId || !linkedIds || !linkedIds.length) return;
+
+  function stillThisSlip() { return window.__slipPreviewSeq === seq; }
+
+  function patchItemsTbody(stats) {
+    if (!stillThisSlip()) return;
+    const tbody = $('#slip-preview-items-tbody');
+    if (!tbody) return;
+    const rows = tbody.querySelectorAll('tr');
+    rows.forEach(function (row) {
+      const nameCell = row.children[0];
+      const orderedCell = row.children[1];
+      const dispatchedCell = row.children[2];
+      const name = nameCell ? nameCell.querySelector('div') : null;
+      const productName = name ? String(name.textContent || '').trim() : '';
+      const stat = stats && stats[productName];
+      // Only fill the Ordered column when the item is mapped to one of our
+      // linked orders. Otherwise show a dash.
+      if (!orderedCell) return;
+      if (!stat || !(stat.ordered)) {
+        orderedCell.innerHTML = '<span class="muted-dash">—</span>';
+        return;
+      }
+      const orderedQty = Number(stat.ordered || 0);
+      const delivered = Number(stat.delivered || 0);
+      const dispatchedQty = parseInt(dispatchedCell ? dispatchedCell.textContent : '0', 10) || 0;
+      let badgeClass = 'badge-secondary';
+      let badgeText = '';
+      if (orderedQty <= 0) {
+        badgeText = '';
+      } else if (delivered + dispatchedQty >= orderedQty) {
+        badgeClass = 'badge-success';
+        badgeText = 'Fulfilled';
+      } else {
+        badgeClass = 'badge-warning';
+        badgeText = (orderedQty - (delivered + dispatchedQty)) + ' pending';
+      }
+      orderedCell.innerHTML = `
+        <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+          <strong>${orderedQty}</strong>
+          ${badgeText ? `<span class="badge ${badgeClass}" style="font-size:0.65rem; padding:1px 4px;">${badgeText}</span>` : ''}
+        </div>
+      `;
+    });
+  }
+
+  function patchOrderDate(metadataList) {
+    if (!stillThisSlip()) return;
+    const row = $('#slip-preview-order-date-row');
+    const value = $('#slip-preview-order-date-value');
+    if (!row || !value) return;
+    if (!metadataList || !metadataList.length) return;
+    const dates = metadataList.map(function (m) { return m && m.date; }).filter(Boolean);
+    if (!dates.length) return;
+    dates.sort();
+    const earliest = dates[0];
+    const sameAll = dates.every(function (d) { return d === earliest; });
+    value.textContent = sameAll
+      ? formatDate(earliest)
+      : (formatDate(dates[0]) + ' \u2013 ' + formatDate(dates[dates.length - 1]));
+    row.style.display = '';
+  }
+
+  google.script.run
+    .withSuccessHandler(function (stats) { patchItemsTbody(stats || {}); })
+    .withFailureHandler(function (err) { /* keep the dashes */ })
+    .getLinkedDeliveryStats(clientId, linkedIds, s.slipCode);
+
+  google.script.run
+    .withSuccessHandler(function (metadataList) { patchOrderDate(metadataList || []); })
+    .withFailureHandler(function (err) { /* leave hidden */ })
+    .getLinkedOrderMetadata(linkedIds);
 }
 
 function renderSlips() {
@@ -740,6 +829,17 @@ function viewSlipByCode(slipCode) {
   const getTimestamp = r => Number(r.slipCode.split('-rev')[1] || 0);
   revisions.sort((a, b) => getTimestamp(b) - getTimestamp(a));
 
+  // After the synchronous modal renders below, kick off an async patch that
+  // fills in ordered-vs-dispatched, description and order-date metadata when
+  // the slip is linked to one or more orders. This keeps the initial render
+  // fast and additive; if no orders are linked the patch is a no-op.
+  const renderSeq = (window.__slipPreviewSeq = (window.__slipPreviewSeq || 0) + 1);
+  const linkedIds = (s.linkedOrders || '').toString()
+    .split(',').map(function (x) { return String(x || '').trim(); }).filter(Boolean);
+  if (linkedIds.length) {
+    enrichSlipPreviewAsync(s, linkedIds, renderSeq);
+  }
+
   const isRevision = slipCode.indexOf('-rev') !== -1;
 
   $('#modal-title').textContent = isRevision ? 'Packing Slip Revision Detail' : 'Packing Slip Detail';
@@ -785,9 +885,13 @@ function viewSlipByCode(slipCode) {
             <span class="meta-label">Slip Code:</span>
             <span class="meta-value bold-badge">${escapeHtml(rootCode)}</span>
           </div>
-          <div class="preview-meta-row">
-            <span class="meta-label">Date:</span>
+          <div class="preview-meta-row" id="slip-preview-dispatch-row">
+            <span class="meta-label">Dispatch Date:</span>
             <span class="meta-value">${formatDate(s.date)}</span>
+          </div>
+          <div class="preview-meta-row" id="slip-preview-order-date-row" style="display:none;">
+            <span class="meta-label">Order Date:</span>
+            <span class="meta-value" id="slip-preview-order-date-value"></span>
           </div>
           ${linkedOrdersStr ? `
           <div class="preview-meta-row">
@@ -839,20 +943,25 @@ function viewSlipByCode(slipCode) {
       <!-- Items Table -->
       <div class="preview-items">
         <h5 class="preview-section-title">Package Contents:</h5>
-        <table class="preview-table">
+        <table class="preview-table" id="slip-preview-table">
           <thead>
             <tr>
               <th>Item Description</th>
-              <th class="text-center" style="width: 100px;">Qty</th>
+              <th class="text-center" style="width: 90px;">Ordered</th>
+              <th class="text-center" style="width: 90px;">Dispatched</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="slip-preview-items-tbody">
   `;
 
   (s.items || []).forEach(it => {
     html += `
       <tr>
-        <td>${escapeHtml(it.name)}</td>
+        <td>
+          <div style="font-weight:600;">${escapeHtml(it.name || '')}</div>
+          ${it.description ? `<div style="font-size:0.78rem; color: var(--text-muted); margin-top:2px;">${escapeHtml(it.description)}</div>` : ''}
+        </td>
+        <td class="text-center ordered-cell"><span class="muted-dash">—</span></td>
         <td class="text-center font-semibold">${it.quantity}</td>
       </tr>
     `;
@@ -880,6 +989,25 @@ function viewSlipByCode(slipCode) {
       <!-- Footer -->
       <div class="preview-footer">
         <p>Thank you for choosing ${escapeHtml(settings.CompanyName || 'My Company')}!</p>
+      </div>
+    </div>
+
+    <!-- Signature block (always shown) -->
+    <div class="signature-block" id="slip-preview-signature">
+      <h5 class="preview-section-title" style="margin-bottom: 0.75rem;"><i data-lucide="signature"></i> Received By</h5>
+      <div class="signature-grid">
+        <div class="signature-line">
+          <span class="signature-label">Name (Print)</span>
+          <span class="signature-rule"></span>
+        </div>
+        <div class="signature-line">
+          <span class="signature-label">Date</span>
+          <span class="signature-rule"></span>
+        </div>
+        <div class="signature-line signature-line-wide">
+          <span class="signature-label">Signature</span>
+          <span class="signature-rule"></span>
+        </div>
       </div>
     </div>
   `;
@@ -1132,6 +1260,12 @@ function refreshLinkedStats(callback) {
     return;
   }
 
+  // When the form is editing an existing slip, exclude its own code so the
+  // row-balance hint does not double-count the qty already on the slip being
+  // edited (this was the source of the "treats the linked order as a new slip
+  // on edit" bug).
+  const excludeSlipCode = (currentSlip && currentSlip.slipCode) || '';
+
   google.script.run
     .withSuccessHandler(stats => {
       currentLinkedStats = stats || {};
@@ -1139,7 +1273,7 @@ function refreshLinkedStats(callback) {
       if (typeof callback === 'function') callback();
     })
     .withFailureHandler(handleError)
-    .getLinkedDeliveryStats(clientId, linkedOrderIds);
+    .getLinkedDeliveryStats(clientId, linkedOrderIds, excludeSlipCode);
 }
 
 function updateAllRowBalanceHints() {
@@ -1176,16 +1310,23 @@ function updateRowBalanceHint(id) {
 
   const ordered = stat.ordered || 0;
   const prevDelivered = stat.delivered || 0;
+  // currentSlip is already excluded server-side when editing, so `prevDelivered`
+  // is the amount other slips have already shipped for this product. `qty` is
+  // the form's row quantity (which on edit currently equals what the active
+  // slip already shipped, hence no double-counting).
   const totalDelivered = prevDelivered + qty;
 
   let labelText = '';
   let badgeClass = 'badge-secondary';
 
-  if (totalDelivered === ordered) {
+  if (ordered === 0) {
+    labelText = 'Pending dispatch';
+    badgeClass = 'badge-secondary';
+  } else if (totalDelivered === ordered) {
     labelText = 'Fully Delivered';
     badgeClass = 'badge-success';
   } else if (totalDelivered < ordered) {
-    labelText = 'Partially Delivered (' + (ordered - totalDelivered) + ' remaining)';
+    labelText = (ordered - totalDelivered) + ' remaining';
     badgeClass = 'badge-warning';
   } else {
     labelText = 'Over-delivered by ' + (totalDelivered - ordered);
@@ -1193,10 +1334,10 @@ function updateRowBalanceHint(id) {
   }
 
   container.innerHTML = `
-    <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.25rem;">
+    <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.25rem; flex-wrap: wrap;">
       <span class="badge ${badgeClass}" style="padding:1px 4px; font-size:0.7rem; border-radius:4px;">${labelText}</span>
       <span style="font-size:0.75rem; color:var(--text-muted);">
-        Ordered: <strong>${ordered}</strong> | Prev: <strong>${prevDelivered}</strong>
+        Ordered: <strong>${ordered}</strong> &nbsp;|&nbsp; Prev: <strong>${prevDelivered}</strong> &nbsp;|&nbsp; This Slip: <strong>${qty}</strong>
       </span>
     </div>
   `;
@@ -1386,8 +1527,13 @@ function linkOrder(orderId) {
               const itemName = String(item.name || '').trim();
               const ordered = Number(item.quantity || 0);
               let delivered = 0;
+              // When the user is editing this slip, exclude its own code so
+              // the dispatched qty already on the slip does not double-count
+              // when pre-filling the rows from the linked order. Filter is
+              // applied per slip below; no further exclusion needed.
+              const excludeCode = (currentSlip && currentSlip.slipCode) || '';
               slips.forEach(s => {
-                if (s.slipCode.indexOf('-rev') === -1) {
+                if (s.slipCode.indexOf('-rev') === -1 && s.slipCode !== excludeCode) {
                   (s.items || []).forEach(it => {
                     if (String(it.name || '').trim() === itemName && it.orderId === orderId) {
                       delivered += Number(it.quantity || 0);
@@ -1397,7 +1543,7 @@ function linkOrder(orderId) {
               });
               const remaining = Math.max(0, ordered - delivered);
               if (remaining > 0 || delivered === 0) {
-                addItemRow(item.name, remaining, false, orderId);
+                addItemRow(item.name, remaining, false, orderId, item.description || '');
               }
             });
             // Auto-pull the order's invoice numbers onto the slip if not already present

@@ -80,14 +80,15 @@ function generatePDF(slip, settings) {
   doc.setFontSize(9.5);
   doc.setTextColor(71, 85, 105); // slate-600
   doc.text('Slip Code: ' + slip.slipCode, pageW - margin, y + 38, { align: 'right' });
-  doc.text('Date: ' + formatDate(slip.date), pageW - margin, y + 52, { align: 'right' });
+  doc.text('Dispatch Date: ' + formatDate(slip.date), pageW - margin, y + 52, { align: 'right' });
 
-  // Build the lines below: Order # (when linked) and Invoice # (free-floating).
+  // Build the lines below: Order # / Order Date (when linked) and Invoice # (free-floating).
   // Move further down per added line so labels never collide with the title.
   var linkedOrderIds = (slip.linkedOrders || '').toString().split(',').map(function (s) { return String(s || '').trim(); }).filter(Boolean);
   var invoiceNums = Array.isArray(slip.invoiceNumbers) && slip.invoiceNumbers.length
     ? slip.invoiceNumbers
     : String(slip.invoiceNumber || '').split(',').map(function (s) { return String(s || '').trim(); }).filter(Boolean);
+  var orderMetaList = Array.isArray(slip.linkedOrderMeta) ? slip.linkedOrderMeta : [];
 
   var baseY = y + 66;
   if (linkedOrderIds.length) {
@@ -98,6 +99,22 @@ function generatePDF(slip, settings) {
     doc.setTextColor(71, 85, 105);
     doc.text(linkedOrderIds.join(', '), pageW - margin, baseY, { align: 'right' });
     baseY += 14;
+  }
+  if (orderMetaList.length) {
+    var orderDates = orderMetaList.map(function (m) { return m && m.date; }).filter(Boolean);
+    if (orderDates.length) {
+      orderDates.sort();
+      var orderDateText = orderDates.length === 1
+        ? formatDate(orderDates[0])
+        : (formatDate(orderDates[0]) + ' – ' + formatDate(orderDates[orderDates.length - 1]));
+      doc.setFont('Helvetica', 'bold');
+      doc.setTextColor(30, 58, 95);
+      doc.text('Order Date:', pageW - margin - 70, baseY, { align: 'right' });
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(71, 85, 105);
+      doc.text(orderDateText, pageW - margin, baseY, { align: 'right' });
+      baseY += 14;
+    }
   }
   if (invoiceNums.length) {
     doc.setFont('Helvetica', 'bold');
@@ -166,36 +183,84 @@ function generatePDF(slip, settings) {
   // Shift Y coordinate past the delivery details panel
   y += boxHeight + 25;
 
-  // Process Item Table
-  const tableRows = (slip.items || []).map((item, idx) => [idx + 1, item.name, item.quantity]);
-  
+  // Process Item Table. Linked items render "Ordered" alongside "Dispatched"
+  // and (when the backend supplies it) a hint of how much is still pending.
+  var itemStats = (slip.linkedStats) || {};
+  const tableRows = (slip.items || []).map((item, idx) => {
+    var stat = itemStats[String(item.name || '').trim()];
+    var orderedCell = (stat && stat.ordered) ? String(stat.ordered) : '—';
+    var pendingCell = '';
+    if (stat && stat.ordered) {
+      var pending = Math.max(0, Number(stat.ordered || 0) - (Number(stat.delivered || 0) + Number(item.quantity || 0)));
+      pendingCell = pending > 0 ? ' (' + pending + ' pending)' : '';
+    }
+    var descriptionBlock = item.description ? '\n' + String(item.description) : '';
+    var descCell = item.name + descriptionBlock;
+    return [idx + 1, descCell, orderedCell, String(item.quantity) + pendingCell];
+  });
+
   doc.autoTable({
     startY: y,
     margin: { left: margin, right: margin },
-    head: [['#', 'Product / Item Description', 'Quantity']],
+    head: [['#', 'Product / Item Description', 'Ordered', 'Dispatched']],
     body: tableRows,
     theme: 'grid',
-    headStyles: { 
+    headStyles: {
       fillColor: [15, 31, 58], // brand primary dark
-      textColor: [255, 255, 255], 
-      fontSize: 10, 
-      fontStyle: 'bold', 
+      textColor: [255, 255, 255],
+      fontSize: 10,
+      fontStyle: 'bold',
       halign: 'left',
-      cellPadding: 8 
+      cellPadding: 8
     },
-    bodyStyles: { 
-      fontSize: 9.5, 
+    bodyStyles: {
+      fontSize: 9.5,
       textColor: [51, 65, 85], // slate-700
-      cellPadding: 7 
+      cellPadding: 7,
+      lineColor: [226, 232, 240],
+      lineWidth: 0.4
     },
-    alternateRowStyles: { 
-      fillColor: [250, 251, 252] 
+    alternateRowStyles: {
+      fillColor: [250, 251, 252]
     },
-    columnStyles: { 
-      0: { cellWidth: 35, halign: 'center' },
-      1: { cellWidth: 'auto' }, 
-      2: { halign: 'center', cellWidth: 70, fontStyle: 'bold' } 
+    columnStyles: {
+      0: { cellWidth: 30, halign: 'center' },
+      1: { cellWidth: 'auto' },
+      2: { halign: 'center', cellWidth: 70, fontStyle: 'bold' },
+      3: { halign: 'center', cellWidth: 80, fontStyle: 'bold' }
     },
+    didParseCell: function(data) {
+      if (data.section === 'head' && data.column.index === 2) {
+        data.cell.styles.halign = 'center';
+      }
+      if (data.section === 'head' && data.column.index === 3) {
+        data.cell.styles.halign = 'center';
+      }
+      // Render an item description in a smaller, muted font directly under the name.
+      if (data.section === 'body' && data.column.index === 1 && data.cell.raw && String(data.cell.raw).indexOf('\n') !== -1) {
+        var lines = String(data.cell.raw).split('\n');
+        data.cell.text = lines;
+      }
+    },
+    didDrawCell: function(data) {
+      // Render description (2nd line) in muted small text underneath the product name.
+      if (data.section === 'body' && data.column.index === 1 && data.cell.raw && String(data.cell.raw).indexOf('\n') !== -1) {
+        var parts = String(data.cell.raw).split('\n');
+        if (parts.length > 1) {
+          var nameY = data.cell.y + data.cell.height / 2 - 2;
+          doc.setFont('Helvetica', 'bold');
+          doc.setFontSize(9.5);
+          doc.setTextColor(15, 23, 42);
+          doc.text(parts[0], data.cell.x + 4, nameY);
+          if (parts[1]) {
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(100, 116, 139);
+            doc.text(parts[1], data.cell.x + 4, nameY + 11);
+          }
+        }
+      }
+    }
     didParseCell: function(data) {
       if (data.section === 'head' && data.column.index === 2) {
         data.cell.styles.halign = 'center';
@@ -210,8 +275,18 @@ function generatePDF(slip, settings) {
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(10.5);
   doc.setTextColor(15, 23, 42); // slate-900
-  
-  const totalQtyText = 'Total Quantity: ' + (slip.totalQuantity || (Array.isArray(slip.items) ? slip.items : []).reduce((a, b) => a + (parseInt(b.quantity, 10) || 0), 0));
+
+  // Sum "Dispatched" column (this slip only) and "Ordered" column when present.
+  let totalDispatched = 0;
+  let totalOrdered = 0;
+  (slip.items || []).forEach(function (item) {
+    totalDispatched += Number(item.quantity || 0);
+    var stat = itemStats[String(item.name || '').trim()];
+    if (stat && stat.ordered) totalOrdered += Number(stat.ordered || 0);
+  });
+  const totalQtyText = (totalOrdered > 0
+    ? 'Total Ordered: ' + totalOrdered + '   |   Total Dispatched (this slip): ' + totalDispatched
+    : 'Total Quantity: ' + totalDispatched);
   doc.text(totalQtyText, margin, finalY);
   finalY += 20;
 
@@ -221,16 +296,48 @@ function generatePDF(slip, settings) {
     doc.setFontSize(9.5);
     doc.setTextColor(30, 58, 95); // slate-800
     doc.text('Notes / Delivery Instructions:', margin, finalY);
-    
+
     doc.setFont('Helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(71, 85, 105); // slate-600
-    
+
     const notesLines = doc.splitTextToSize(slip.notes, pageW - margin * 2);
     doc.text(notesLines, margin, finalY + 14);
-    
+
     finalY += (notesLines.length * 12) + 20;
   }
+
+  // Received By signature block.
+  finalY += 12;
+  if (finalY > pageH - 150) {
+    doc.addPage();
+    finalY = margin;
+  }
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 31, 58);
+  doc.text('Received By', margin, finalY);
+  finalY += 16;
+  doc.setDrawColor(148, 163, 184);
+  doc.setLineWidth(0.6);
+
+  var labelWidth = 90;
+  function drawSignatureLine(label, yPos, lineWidth) {
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(30, 58, 95);
+    doc.text(label, margin, yPos);
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.line(margin + labelWidth, yPos + 2, margin + labelWidth + lineWidth, yPos + 2);
+  }
+  drawSignatureLine('Name (Print):', finalY, pageW - margin * 2 - labelWidth);
+  finalY += 28;
+  drawSignatureLine('Date:', finalY, 120);
+  finalY += 28;
+  drawSignatureLine('Signature:', finalY, pageW - margin * 2 - labelWidth);
+  finalY += 36;
 
   // Draw Page Footer (bottom aligned)
   doc.setFont('Helvetica', 'normal');
@@ -247,5 +354,36 @@ function generatePDF(slip, settings) {
 
   // Download Action
   doc.save('PackingSlip-' + slip.slipCode + '.pdf');
+}
+
+/**
+ * Async wrapper that fetches ordered-vs-dispatched stats + linked-order
+ * metadata, then renders the PDF. Existing call sites pass a slip that may
+ * not yet carry `linkedStats` / `linkedOrderMeta`, so we lazy-load them.
+ */
+function generatePDFFromSlip(slip, settings) {
+  var linkedIds = (slip && slip.linkedOrders ? String(slip.linkedOrders || '') : '')
+    .split(',').map(function (s) { return String(s || '').trim(); }).filter(Boolean);
+  if (!linkedIds.length || !slip.clientId) {
+    generatePDF(slip, settings);
+    return;
+  }
+  var pending = 2;
+  var stats = slip.linkedStats || {};
+  var orderMeta = slip.linkedOrderMeta || [];
+  function maybeRun() {
+    if (--pending === 0) {
+      var augmented = Object.assign({}, slip, { linkedStats: stats, linkedOrderMeta: orderMeta });
+      generatePDF(augmented, settings);
+    }
+  }
+  google.script.run
+    .withSuccessHandler(function (s) { stats = s || {}; maybeRun(); })
+    .withFailureHandler(function () { maybeRun(); })
+    .getLinkedDeliveryStats(slip.clientId, linkedIds, slip.slipCode);
+  google.script.run
+    .withSuccessHandler(function (m) { orderMeta = m || []; maybeRun(); })
+    .withFailureHandler(function () { maybeRun(); })
+    .getLinkedOrderMetadata(linkedIds);
 }
 </script>

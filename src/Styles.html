@@ -1259,6 +1259,75 @@ tr.table-row-animate:hover {
   color: var(--text-muted);
 }
 
+/* ----- Received-by signature block (preview + print) ----- */
+.signature-block {
+  margin-top: 2rem;
+  padding: 1.25rem 1rem 0.75rem;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background-color: rgba(15, 23, 42, 0.025);
+}
+.signature-block .preview-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--primary);
+  margin-bottom: 0.75rem;
+}
+.signature-block .preview-section-title svg,
+.signature-block .preview-section-title i {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+.signature-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem 1.5rem;
+}
+.signature-line {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.signature-line-wide {
+  grid-column: 1 / -1;
+}
+.signature-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.signature-rule {
+  display: block;
+  height: 22px;
+  border-bottom: 1px solid var(--text);
+  width: 100%;
+}
+@media print {
+  .signature-block {
+    page-break-inside: avoid;
+    border-style: solid;
+    background-color: transparent;
+  }
+}
+
+/* ----- Ordered-vs-Dispatched helpers (preview table) ----- */
+.muted-dash {
+  color: var(--text-muted);
+  font-style: italic;
+  font-weight: 400;
+}
+.preview-table td.ordered-cell,
+.preview-table td.dispatched-cell {
+  vertical-align: middle;
+}
+.preview-table td .badge {
+  margin-top: 2px;
+}
+
 .footer-tagline {
   display: block;
   font-size: 0.72rem;

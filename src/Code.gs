@@ -1069,7 +1069,7 @@ function deleteOrder(orderId) {
  * Balance & Linkage Statistics
  * ------------------------------------------------------------------ */
 
-function getLinkedDeliveryStats(clientId, orderIds) {
+function getLinkedDeliveryStats(clientId, orderIds, excludeSlipCode) {
   checkLicenseOrThrow();
 
   // Clean IDs
@@ -1079,9 +1079,16 @@ function getLinkedDeliveryStats(clientId, orderIds) {
     else targetOrders = orderIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
   }
 
-  var stats = {}; // { productName: { ordered: 0, delivered: 0 } }
+  var stats = {}; // { productName: { ordered: 0, delivered: 0, description: '', orderId: '', orderDate: '' } }
+  var excludeSet = {};
+  if (excludeSlipCode) {
+    String(excludeSlipCode).split(',').forEach(function (s) {
+      var t = String(s || '').trim();
+      if (t) excludeSet[t] = true;
+    });
+  }
 
-  // 1. Gather Ordered quantities
+  // 1. Gather Ordered quantities (and copy the canonical description / order date)
   if (targetOrders.length > 0) {
     var dbOrders = getOrders();
     dbOrders.forEach(function(order) {
@@ -1089,35 +1096,68 @@ function getLinkedDeliveryStats(clientId, orderIds) {
         (order.items || []).forEach(function(item) {
           var name = String(item.name || '').trim();
           if (name) {
-            if (!stats[name]) stats[name] = { ordered: 0, delivered: 0 };
+            if (!stats[name]) stats[name] = { ordered: 0, delivered: 0, description: '', orderId: order.id, orderDate: order.date || '' };
             stats[name].ordered += Number(item.quantity || 0);
+            if (!stats[name].description && item.description) {
+              stats[name].description = String(item.description);
+            }
           }
         });
       }
     });
   }
 
-  // 2. Sum up Delivered quantities from all active packing slips
+  // 2. Sum up Delivered quantities from all active packing slips.
+  //    Slips in `excludeSet` (typically the one currently being edited) are
+  //    skipped so their own qty does not double-count against row hints.
   var dbSlips = getPackingSlips();
   dbSlips.forEach(function(slip) {
-    // Only parse active slips (skip revision archives)
-    if (slip.slipCode.indexOf('-rev') === -1) {
-      (slip.items || []).forEach(function(item) {
-        var name = String(item.name || '').trim();
-        if (name) {
-          // If this item was linked to one of our target orders
-          var matchesOrder = item.orderId && targetOrders.indexOf(item.orderId) !== -1;
-
-          if (matchesOrder) {
-            if (!stats[name]) stats[name] = { ordered: 0, delivered: 0 };
-            stats[name].delivered += Number(item.quantity || 0);
+    if (slip.slipCode.indexOf('-rev') !== -1) return;
+    if (excludeSet[slip.slipCode]) return;
+    (slip.items || []).forEach(function(item) {
+      var name = String(item.name || '').trim();
+      if (name) {
+        var matchesOrder = item.orderId && targetOrders.indexOf(item.orderId) !== -1;
+        if (matchesOrder) {
+          if (!stats[name]) stats[name] = { ordered: 0, delivered: 0, description: '', orderId: item.orderId, orderDate: '' };
+          stats[name].delivered += Number(item.quantity || 0);
+          if (!stats[name].description && item.description) {
+            stats[name].description = String(item.description);
           }
         }
-      });
-    }
+      }
+    });
   });
 
   return stats;
+}
+
+/**
+ * Returns the linked order details (id + date) for a slip. Powers the
+ * Order Date vs Dispatch Date display on the printed/preview packing slip.
+ */
+function getLinkedOrderMetadata(orderIds) {
+  checkLicenseOrThrow();
+  var ids = [];
+  if (orderIds) {
+    if (Array.isArray(orderIds)) ids = orderIds;
+    else ids = String(orderIds || '').split(',').map(function (s) { return String(s || '').trim(); }).filter(Boolean);
+  }
+  if (!ids.length) return [];
+  var dbOrders = getOrders();
+  var out = [];
+  ids.forEach(function (id) {
+    var found = null;
+    for (var i = 0; i < dbOrders.length; i++) {
+      if (dbOrders[i].id === id) { found = dbOrders[i]; break; }
+    }
+    if (found) {
+      out.push({ id: found.id, date: found.date || '', clientId: found.clientId, clientName: found.clientName });
+    } else {
+      out.push({ id: id, date: '', clientId: '', clientName: '' });
+    }
+  });
+  return out;
 }
 
 /**

@@ -108,7 +108,7 @@ function renderOrders() {
   if (window.lucide) lucide.createIcons();
 }
 
-function addOrderItemRow(name, qty, shipped) {
+function addOrderItemRow(name, qty, shipped, description) {
   const container = $('#order-items-container');
   if (!container) return;
 
@@ -118,8 +118,10 @@ function addOrderItemRow(name, qty, shipped) {
 
   row.innerHTML = `
     <div class="field-group flex-2">
-      <label for="${id}-name" class="label-inline">Product Description</label>
+      <label for="${id}-name" class="label-inline">Product Name</label>
       <input type="text" id="${id}-name" class="item-name" placeholder="Item name..." value="${escapeHtml(name || '')}" list="suggestions-list-order" required>
+      <label for="${id}-desc" class="label-inline" style="margin-top: 0.35rem;">Description (optional)</label>
+      <input type="text" id="${id}-desc" class="item-description" placeholder="e.g. 20x30 inch, polyester, color..." value="${escapeHtml(description || '')}">
     </div>
     <div class="field-group flex-1">
       <label for="${id}-qty" class="label-inline">Ordered Qty</label>
@@ -164,9 +166,9 @@ function editOrder(orderId) {
   if (container) {
     container.innerHTML = '';
     if (o.items && o.items.length) {
-      o.items.forEach(it => addOrderItemRow(it.name, it.quantity, it.shipped));
+      o.items.forEach(it => addOrderItemRow(it.name, it.quantity, it.shipped, it.description));
     } else {
-      addOrderItemRow('', 1, 0);
+      addOrderItemRow('', 1, 0, '');
     }
   }
 
@@ -201,7 +203,7 @@ function cancelOrderEdit() {
   if (invInput) invInput.value = '';
 
   $('#order-items-container').innerHTML = '';
-  addOrderItemRow('', 1, 0);
+  addOrderItemRow('', 1, 0, '');
   if ($('#order-date')) $('#order-date').valueAsDate = new Date();
 
   const box = $('#order-suggestions-box');
@@ -256,9 +258,11 @@ function saveOrderSubmit() {
     const qty = parseInt(row.querySelector('.item-qty').value, 10);
     const shippedVal = row.querySelector('.item-shipped').value;
     const shipped = shippedVal !== '' ? parseInt(shippedVal, 10) : 0;
+    const descEl = row.querySelector('.item-description');
+    const description = descEl ? String(descEl.value || '').trim() : '';
 
     if (!name) {
-      toast(`Row ${idx + 1}: Description is required.`, 'danger');
+      toast(`Row ${idx + 1}: Product name is required.`, 'danger');
       valid = false;
       return;
     }
@@ -272,7 +276,7 @@ function saveOrderSubmit() {
       valid = false;
       return;
     }
-    items.push({ name, quantity: qty, shipped: shipped });
+    items.push({ name, quantity: qty, shipped: shipped, description: description });
   });
 
   if (!valid) return;
@@ -388,7 +392,7 @@ function renderOrderSuggestions(list) {
         }
       }
       if (!populated) {
-        addOrderItemRow(s, 1, 0);
+        addOrderItemRow(s, 1, 0, '');
       }
     };
     chipContainer.appendChild(chip);
@@ -401,7 +405,7 @@ function renderOrderSuggestions(list) {
 // Initialise items container and listeners
 document.addEventListener('DOMContentLoaded', () => {
   const container = $('#order-items-container');
-  if (container) addOrderItemRow('', 1, 0);
+  if (container) addOrderItemRow('', 1, 0, '');
   
   const clientSelect = $('#order-client');
   if (clientSelect) {
