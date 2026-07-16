@@ -1785,8 +1785,8 @@ function linkOrder(orderId) {
               });
               const remaining = Math.max(0, ordered - delivered);
               if (remaining > 0 || delivered === 0) {
-                // Pass '' for dispatched qty, and remaining for ordered qty!
-                addItemRow(item.name, '', false, orderId, '', remaining);
+                // Pass '' for dispatched qty, and original ordered for ordered qty!
+                addItemRow(item.name, '', false, orderId, '', ordered);
               }
             });
             // Auto-pull the order's invoice numbers onto the slip if not already present
