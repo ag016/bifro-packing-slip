@@ -39,3 +39,9 @@ jobs:
         run: |
           echo '{"scriptId":"10DMZUV7wZqjj6SyQgrkhQ_PWnObRshN5rbUPp7nLDliG0fzpyYUfWerR","rootDir":"./src"}' > .clasp.json
           clasp push --force
+
+      # 7. Push code to Target Project (Akhil Gupta)
+      - name: Push to Akhil Gupta Project
+        run: |
+          echo '{"scriptId":"1qIkiqiLVYH-3vrJlglwYn1Xn-JhAZUAnjHxn727bKE7Zeha5o6kePvem","rootDir":"./src"}' > .clasp.json
+          clasp push --force
