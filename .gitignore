@@ -17,3 +17,9 @@ Thumbs.db
 
 # Temporary master wrapper folder
 master-wrapper/
+
+# AI Coding tools metadata
+.freebuff/
+.gemini/
+.claude/
+.codex/
