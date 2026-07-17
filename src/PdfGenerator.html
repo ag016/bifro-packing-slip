@@ -389,9 +389,14 @@ function generatePDF(slip, settings) {
       const blob = doc.output('blob');
       const blobUrl = URL.createObjectURL(blob);
       const newWindow = window.open(blobUrl, '_blank');
-      if (!newWindow) {
-        // If popup is blocked, fallback to standard download
-        doc.save(fileName);
+      
+      // If the browser blocks the popup (newWindow is null/undefined or closed),
+      // we wait 1200ms before downloading as a fallback. This gives the user time
+      // to see/allow the popup blocker without immediately forcing a duplicate download.
+      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+        setTimeout(function() {
+          doc.save(fileName);
+        }, 1200);
       }
     } catch (e) {
       console.warn('Could not open PDF in new tab, falling back to download:', e);
