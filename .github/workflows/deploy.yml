@@ -30,18 +30,24 @@ jobs:
 
       # 5. Push code to Central Library Project
       - name: Push to Central Library
+        env:
+          SCRIPT_ID: ${{ secrets.CLASP_SCRIPT_ID_CENTRAL }}
         run: |
-          echo '{"scriptId":"1LtcRLJCSl_JyL0zsfc-aizJT6CiWqFWAocc3CItBXRmixxM-eoqAnTv5","rootDir":"./src"}' > .clasp.json
+          echo "{\"scriptId\":\"$SCRIPT_ID\",\"rootDir\":\"./src\"}" > .clasp.json
           clasp push --force
 
       # 6. Push code to Full Codebase Master Sheet Template
       - name: Push to Full Codebase Master Sheet
+        env:
+          SCRIPT_ID: ${{ secrets.CLASP_SCRIPT_ID_MASTER }}
         run: |
-          echo '{"scriptId":"10DMZUV7wZqjj6SyQgrkhQ_PWnObRshN5rbUPp7nLDliG0fzpyYUfWerR","rootDir":"./src"}' > .clasp.json
+          echo "{\"scriptId\":\"$SCRIPT_ID\",\"rootDir\":\"./src\"}" > .clasp.json
           clasp push --force
 
       # 7. Push code to Target Project (Akhil Gupta)
       - name: Push to Akhil Gupta Project
+        env:
+          SCRIPT_ID: ${{ secrets.CLASP_SCRIPT_ID_PERSONAL }}
         run: |
-          echo '{"scriptId":"1qIkiqiLVYH-3vrJlglwYn1Xn-JhAZUAnjHxn727bKE7Zeha5o6kePvem","rootDir":"./src"}' > .clasp.json
+          echo "{\"scriptId\":\"$SCRIPT_ID\",\"rootDir\":\"./src\"}" > .clasp.json
           clasp push --force

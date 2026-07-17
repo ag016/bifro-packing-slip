@@ -14,6 +14,7 @@ Thumbs.db
 
 # Clasp credentials & local state
 .clasprc.json
+.clasp.json
 
 # Temporary master wrapper folder
 master-wrapper/
