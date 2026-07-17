@@ -401,13 +401,29 @@ function generatePDFFromSlip(slip, settings, onRendered) {
       try { onRendered(); } catch (e) { /* swallow restore errors */ }
     }
   }
+  
+  function showRenderError(err) {
+    console.error('PDF Generation failed:', err);
+    if (typeof toast === 'function') {
+      toast('PDF Generation failed: ' + err.message, 'danger');
+    } else {
+      alert('PDF Generation failed: ' + err.message);
+    }
+  }
+
   function renderWith(enrich) {
     enrich = enrich || {};
     var augmented = Object.assign({}, slip, {
       linkedStats: enrich.stats || {},
       linkedOrderMeta: enrich.orderMeta || []
     });
-    try { generatePDF(augmented, settings); } finally { done(); }
+    try { 
+      generatePDF(augmented, settings); 
+    } catch (e) {
+      showRenderError(e);
+    } finally { 
+      done(); 
+    }
   }
 
   // Always surface a visible loading indicator while we wait on either the
@@ -421,7 +437,13 @@ function generatePDFFromSlip(slip, settings, onRendered) {
     .split(',').map(function (s) { return String(s || '').trim(); }).filter(Boolean);
   if (!linkedIds.length || !slip.clientId) {
     // Not linked to any order: render straight away, no enrichment needed.
-    try { generatePDF(slip, settings); } finally { done(); }
+    try { 
+      generatePDF(slip, settings); 
+    } catch (e) {
+      showRenderError(e);
+    } finally { 
+      done(); 
+    }
     return;
   }
   google.script.run
@@ -432,8 +454,7 @@ function generatePDFFromSlip(slip, settings, onRendered) {
       try {
         generatePDF(slip, settings);
       } catch (renderErr) {
-        // Surface to caller if they want to handle; for safety also log.
-        try { console.warn('PDF render after enrichment failure failed:', renderErr); } catch (e) {}
+        showRenderError(renderErr);
       } finally {
         done();
       }
