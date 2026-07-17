@@ -308,8 +308,7 @@ function savePackingSlip() {
     notes: slipNotes,
     invoiceNumber: merged.join(', '),
     invoiceNumbers: merged,
-    linkedOrders: linkedOrderIds.slice(),
-    linkedInvoices: merged.join(', ')
+    linkedOrders: linkedOrderIds.slice()
   };
 
   if (currentSlip && currentSlip.slipCode) {
@@ -925,8 +924,7 @@ function renderSlips() {
       var anyMatch = arr.some(function (n) {
         return String(n || '').toLowerCase().indexOf(invoiceNumFilter) !== -1;
       });
-      var legacyHit = String(s.invoiceNumber || '').toLowerCase().indexOf(invoiceNumFilter) !== -1
-        || String(s.linkedInvoices || '').toLowerCase().indexOf(invoiceNumFilter) !== -1;
+      var legacyHit = String(s.invoiceNumber || '').toLowerCase().indexOf(invoiceNumFilter) !== -1;
       return anyMatch || legacyHit;
     });
   }

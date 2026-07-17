@@ -552,21 +552,17 @@ function normalizeDate(d) {
 function ensurePackingSlipsHeader(sheet) {
   var headerLen = sheet.getLastColumn();
   var headerRow = headerLen > 0 ? sheet.getRange(1, 1, 1, headerLen).getValues()[0] : [];
-  var desired = ['Slip Code', 'Date', 'Client ID', 'Client Name', 'Client Company', 'Client Phone', 'Client Address', 'Items JSON', 'Total Quantity', 'Notes', 'Invoice Numbers', 'Created At', 'Created By', 'Edited By', 'Linked Orders', 'Invoice Numbers (Legacy)'];
+  var desired = ['Slip Code', 'Date', 'Client ID', 'Client Name', 'Client Company', 'Client Phone', 'Client Address', 'Items JSON', 'Total Quantity', 'Notes', 'Invoice Numbers', 'Created At', 'Created By', 'Edited By', 'Linked Orders'];
   var col11 = headerRow.length >= 11 ? String(headerRow[10] || '').trim() : '';
-  var col16 = headerRow.length >= 16 ? String(headerRow[15] || '').trim() : '';
-  // Migrate legacy header names independently so we don't accidentally rely
-  // on column 11 to deduce column 16's state.
+  
   if (col11 === 'Invoice Number') {
     sheet.getRange(1, 11).setValue('Invoice Numbers');
   }
-  if (col16 === 'Linked Invoices') {
-    sheet.getRange(1, 16).setValue('Invoice Numbers (Legacy)');
-  }
-  // Ensure header is at least 16 columns wide with the right headers.
-  if (headerRow.length < 16) {
+  
+  // Ensure header is at least 15 columns wide with the right headers.
+  if (headerRow.length < 15) {
     sheet.getRange(1, 1, 1, desired.length).setValues([desired]).setFontWeight('bold');
-  } else if (headerRow[14] !== 'Linked Orders' || headerRow[15] !== 'Invoice Numbers (Legacy)') {
+  } else if (headerRow[14] !== 'Linked Orders') {
     sheet.getRange(1, 1, 1, desired.length).setValues([desired]).setFontWeight('bold');
   }
 }
@@ -597,11 +593,7 @@ function getPackingSlips() {
       } catch (e) {
         items = [];
       }
-      // Merge free-floating invoice numbers from the primary column and
-      // the legacy "Invoice Numbers (Legacy)" column (was "Linked Invoices").
-      var invoiceNumbers = normalizeInvoiceNumberList(values[i][10]).concat(
-        normalizeInvoiceNumberList(values[i][15])
-      );
+      var invoiceNumbers = normalizeInvoiceNumberList(values[i][10]);
       slips.push({
         slipCode: values[i][0],
         date: normalizeDate(values[i][1]),
@@ -618,8 +610,7 @@ function getPackingSlips() {
         createdAt: values[i][11],
         createdBy: values[i][12] || '',
         editedBy: values[i][13] || '',
-        linkedOrders: values[i][14] || '',
-        linkedInvoices: values[i][15] || ''
+        linkedOrders: values[i][14] || ''
       });
     }
   }
@@ -711,14 +702,12 @@ function savePackingSlip(slip) {
     slip.createdAt,
     slip.createdBy,
     slip.editedBy,
-    orderStr,
-    invoiceNumbersPrimary // mirror into legacy column for backward compatibility
+    orderStr
   ]);
 
   // Reflect the value we persisted onto the returned object so the client stays in sync.
   slip.invoiceNumber = invoiceNumbersPrimary;
   slip.invoiceNumbers = invoiceNumbers;
-  slip.linkedInvoices = invoiceNumbersPrimary;
 
   // Recalculate statuses for any linked orders (invoices live inside orders now).
   try {
