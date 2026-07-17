@@ -1327,3 +1327,89 @@ function runCentral(functionName, args) {
   }
   throw new Error("Function " + functionName + " is not defined in Central Library.");
 }
+
+/**
+ * Creates a custom menu in the Google Sheets interface on open.
+ */
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Packing Slip App')
+    .addItem('Launch Web App', 'showLaunchAppDialog')
+    .addToUi();
+}
+
+/**
+ * Opens a modal dialog that automatically redirects to the deployed web app.
+ */
+function showLaunchAppDialog() {
+  var url = ScriptApp.getService().getUrl();
+  if (!url) {
+    SpreadsheetApp.getUi().alert(
+      "Web App URL not found. Please deploy the script as a Web App (Deploy > New deployment > Web app) first."
+    );
+    return;
+  }
+  
+  var htmlContent = 
+    '<!DOCTYPE html>' +
+    '<html>' +
+    '<head>' +
+    '  <style>' +
+    '    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 1.25rem; text-align: center; color: #1e293b; background: #f8fafc; margin: 0; }' +
+    '    .btn { display: inline-flex; align-items: center; justify-content: center; background: #f59e0b; color: white; border: none; padding: 0.65rem 1.25rem; font-size: 0.9rem; font-weight: 600; border-radius: 6px; cursor: pointer; text-decoration: none; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); transition: all 0.15s ease; margin-top: 0.5rem; }' +
+    '    .btn:hover { background: #d97706; }' +
+    '    p { font-size: 0.8rem; color: #64748b; margin-top: 0.85rem; line-height: 1.4; }' +
+    '  </style>' +
+    '</head>' +
+    '<body>' +
+    '  <a href="' + url + '" target="_blank" class="btn" onclick="google.script.host.close()">Launch Packing Slip Software</a>' +
+    '  <p>Click the button above to launch the application in a new browser tab.<br><small>(Google Sheets restricts scripts from opening new tabs automatically without user click)</small></p>' +
+    '  <script>' +
+    '    var win = window.open("' + url + '", "_blank");' +
+    '    if (win) { google.script.host.close(); }' +
+    '  </script>' +
+    '</body>' +
+    '</html>';
+    
+  var html = HtmlService.createHtmlOutput(htmlContent)
+    .setWidth(400)
+    .setHeight(170)
+    .setTitle('Launch Application');
+    
+  SpreadsheetApp.getUi().showModalDialog(html, 'Launch Application');
+}
+
+/**
+ * Returns technical metadata about the Google Sheets spreadsheet and script project.
+ */
+function getSystemDeploymentInfo() {
+  checkLicenseOrThrow();
+  
+  var scriptId = 'N/A';
+  var webAppUrl = 'N/A';
+  var spreadsheetId = 'N/A';
+  
+  try {
+    scriptId = ScriptApp.getScriptId();
+  } catch (e) {
+    scriptId = 'Error: ' + e.message;
+  }
+  
+  try {
+    webAppUrl = ScriptApp.getService().getUrl();
+  } catch (e) {
+    webAppUrl = 'Error: ' + e.message;
+  }
+  
+  try {
+    spreadsheetId = SpreadsheetApp.getActiveSpreadsheet().getId();
+  } catch (e) {
+    spreadsheetId = 'Error: ' + e.message;
+  }
+  
+  return {
+    scriptId: scriptId,
+    webAppUrl: webAppUrl,
+    spreadsheetId: spreadsheetId
+  };
+}

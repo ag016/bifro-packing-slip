@@ -351,6 +351,37 @@ function loadSettings() {
     })
     .withFailureHandler(handleError)
     .getSettings();
+
+  loadSystemDeploymentInfo();
+}
+
+function loadSystemDeploymentInfo() {
+  google.script.run
+    .withSuccessHandler(info => {
+      const scriptIdField = $('#sys-script-id');
+      const sheetIdField = $('#sys-sheet-id');
+      const webappUrlField = $('#sys-webapp-url');
+      if (scriptIdField) scriptIdField.value = info.scriptId || 'N/A';
+      if (sheetIdField) sheetIdField.value = info.spreadsheetId || 'N/A';
+      if (webappUrlField) webappUrlField.value = info.webAppUrl || 'N/A';
+    })
+    .withFailureHandler(err => {
+      console.error('Failed to load system info:', err);
+    })
+    .getSystemDeploymentInfo();
+}
+
+function copySystemField(elementId) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  el.select();
+  el.setSelectionRange(0, 99999);
+  try {
+    document.execCommand('copy');
+    toast('Copied to clipboard!', 'success');
+  } catch (err) {
+    toast('Copy failed. Please manually select and copy.', 'warning');
+  }
 }
 
 function saveSettings() {

@@ -277,6 +277,38 @@
             </div>
           </div>
 
+          <!-- Tab Card: System & Deployment Information -->
+          <div class="card" style="margin-top: 1.5rem;">
+            <h2><i data-lucide="info" style="color:var(--accent);"></i> System & Deployment Info</h2>
+            <p class="subtitle">Use these details if you need technical support or code updates pushed directly to your instance.</p>
+            
+            <div class="card-sm-inset" style="padding: 1.25rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);">
+              <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                <div>
+                  <label class="label-inline" style="font-weight: 600; text-transform: uppercase; font-size: 0.72rem; color: var(--text-muted);">Script ID / Project ID</label>
+                  <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
+                    <input type="text" id="sys-script-id" readonly style="flex: 1; padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.85rem; background: #f8fafc;" value="Loading...">
+                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="copySystemField('sys-script-id')" style="padding: 0.5rem 0.75rem; height: 36px;">Copy</button>
+                  </div>
+                </div>
+                <div>
+                  <label class="label-inline" style="font-weight: 600; text-transform: uppercase; font-size: 0.72rem; color: var(--text-muted);">Database Sheet ID</label>
+                  <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
+                    <input type="text" id="sys-sheet-id" readonly style="flex: 1; padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.85rem; background: #f8fafc;" value="Loading...">
+                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="copySystemField('sys-sheet-id')" style="padding: 0.5rem 0.75rem; height: 36px;">Copy</button>
+                  </div>
+                </div>
+                <div>
+                  <label class="label-inline" style="font-weight: 600; text-transform: uppercase; font-size: 0.72rem; color: var(--text-muted);">Active Web App URL</label>
+                  <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
+                    <input type="text" id="sys-webapp-url" readonly style="flex: 1; padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.85rem; background: #f8fafc;" value="Loading...">
+                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="copySystemField('sys-webapp-url')" style="padding: 0.5rem 0.75rem; height: 36px;">Copy</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Tab Card: User Access & Accounts (Admin Only) -->
           <div class="card" id="user-management-card" style="margin-top: 1.5rem; display: none;">
             <h2><i data-lucide="users" style="color:var(--accent);"></i> User Access & Accounts</h2>
