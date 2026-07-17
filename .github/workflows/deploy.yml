@@ -32,22 +32,34 @@ jobs:
       - name: Push to Central Library
         env:
           SCRIPT_ID: ${{ secrets.CLASP_SCRIPT_ID_CENTRAL }}
+          DEPLOYMENT_ID: ${{ secrets.CLASP_DEPLOYMENT_ID_CENTRAL }}
         run: |
           echo "{\"scriptId\":\"$SCRIPT_ID\",\"rootDir\":\"./src\"}" > .clasp.json
           clasp push --force
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            clasp deploy -i "$DEPLOYMENT_ID" -d "Automated deployment from GitHub Actions"
+          fi
 
       # 6. Push code to Full Codebase Master Sheet Template
       - name: Push to Full Codebase Master Sheet
         env:
           SCRIPT_ID: ${{ secrets.CLASP_SCRIPT_ID_MASTER }}
+          DEPLOYMENT_ID: ${{ secrets.CLASP_DEPLOYMENT_ID_MASTER }}
         run: |
           echo "{\"scriptId\":\"$SCRIPT_ID\",\"rootDir\":\"./src\"}" > .clasp.json
           clasp push --force
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            clasp deploy -i "$DEPLOYMENT_ID" -d "Automated deployment from GitHub Actions"
+          fi
 
       # 7. Push code to Target Project (Akhil Gupta)
       - name: Push to Akhil Gupta Project
         env:
           SCRIPT_ID: ${{ secrets.CLASP_SCRIPT_ID_PERSONAL }}
+          DEPLOYMENT_ID: ${{ secrets.CLASP_DEPLOYMENT_ID_PERSONAL }}
         run: |
           echo "{\"scriptId\":\"$SCRIPT_ID\",\"rootDir\":\"./src\"}" > .clasp.json
           clasp push --force
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            clasp deploy -i "$DEPLOYMENT_ID" -d "Automated deployment from GitHub Actions"
+          fi
