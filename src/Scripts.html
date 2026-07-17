@@ -975,4 +975,17 @@ function deleteUserConfirm(userId) {
       .deleteUser(userId);
   }
 }
+
+function toggleAccordion(bodyId, iconId) {
+  const body = document.getElementById(bodyId);
+  const icon = document.getElementById(iconId);
+  if (!body) return;
+  if (body.style.display === 'none' || body.style.display === '') {
+    body.style.display = 'block';
+    if (icon) icon.style.transform = 'rotate(180deg)';
+  } else {
+    body.style.display = 'none';
+    if (icon) icon.style.transform = 'rotate(0deg)';
+  }
+}
 </script>

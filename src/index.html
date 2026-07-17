@@ -277,90 +277,106 @@
             </div>
           </div>
 
-          <!-- Tab Card: System & Deployment Information -->
-          <div class="card" style="margin-top: 1.5rem;">
-            <h2><i data-lucide="info" style="color:var(--accent);"></i> System & Deployment Info</h2>
-            <p class="subtitle">Use these details if you need technical support or code updates pushed directly to your instance.</p>
+          <!-- Tab Card: User Access & Accounts (Admin Only) -->
+          <div class="card" id="user-management-card" style="margin-top: 1.5rem; display: none;">
+            <div class="accordion-header" onclick="toggleAccordion('user-accordion-body', 'user-accordion-icon')" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;">
+              <h2 style="margin: 0; display: flex; align-items: center; gap: 0.5rem; font-size: 1.25rem;">
+                <i data-lucide="users" style="color:var(--accent);"></i> User Access & Accounts
+              </h2>
+              <i data-lucide="chevron-down" id="user-accordion-icon" class="accordion-chevron" style="transition: transform 0.2s ease;"></i>
+            </div>
             
-            <div class="card-sm-inset" style="padding: 1.25rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);">
-              <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-                <div>
-                  <label class="label-inline" style="font-weight: 600; text-transform: uppercase; font-size: 0.72rem; color: var(--text-muted);">Script ID / Project ID</label>
-                  <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
-                    <input type="text" id="sys-script-id" readonly style="flex: 1; padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.85rem; background: #f8fafc;" value="Loading...">
-                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="copySystemField('sys-script-id')" style="padding: 0.5rem 0.75rem; height: 36px;">Copy</button>
+            <div id="user-accordion-body" style="display: none; margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1.25rem;">
+              <p class="subtitle" style="margin-top: 0;">Add, edit, or remove users. Programmatic sharing coordinates spreadsheet and script permissions instantly.</p>
+              
+              <!-- User addition/editing form -->
+              <form id="user-form" onsubmit="event.preventDefault(); saveUserSubmit();" style="margin-bottom: 2rem; background: var(--bg); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+                <h3 id="user-form-title" style="margin-top: 0; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="user-plus" style="width:18px;height:18px;"></i> Add New User</h3>
+                <input type="hidden" id="user-edit-id" value="">
+                
+                <div class="grid-3">
+                  <div class="field-group">
+                    <label for="user-input-name">Full Name *</label>
+                    <input id="user-input-name" type="text" placeholder="John Doe" required>
+                  </div>
+                  <div class="field-group">
+                    <label for="user-input-email">Gmail Address *</label>
+                    <input id="user-input-email" type="email" placeholder="john.doe@gmail.com" required>
+                  </div>
+                  <div class="field-group">
+                    <label for="user-input-role">Role *</label>
+                    <select id="user-input-role" required>
+                      <option value="User">User / Editor</option>
+                      <option value="Admin">Admin</option>
+                    </select>
                   </div>
                 </div>
-                <div>
-                  <label class="label-inline" style="font-weight: 600; text-transform: uppercase; font-size: 0.72rem; color: var(--text-muted);">Database Sheet ID</label>
-                  <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
-                    <input type="text" id="sys-sheet-id" readonly style="flex: 1; padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.85rem; background: #f8fafc;" value="Loading...">
-                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="copySystemField('sys-sheet-id')" style="padding: 0.5rem 0.75rem; height: 36px;">Copy</button>
-                  </div>
+                
+                <div style="display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end;">
+                  <button type="button" id="user-form-cancel" class="btn btn-secondary btn-sm" onclick="cancelUserEdit()" style="display: none;">Cancel</button>
+                  <button type="submit" class="btn btn-primary btn-sm"><i data-lucide="save" style="width:14px;height:14px;"></i> Save Account</button>
                 </div>
-                <div>
-                  <label class="label-inline" style="font-weight: 600; text-transform: uppercase; font-size: 0.72rem; color: var(--text-muted);">Active Web App URL</label>
-                  <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
-                    <input type="text" id="sys-webapp-url" readonly style="flex: 1; padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.85rem; background: #f8fafc;" value="Loading...">
-                    <button type="button" class="btn btn-secondary-soft btn-xs" onclick="copySystemField('sys-webapp-url')" style="padding: 0.5rem 0.75rem; height: 36px;">Copy</button>
-                  </div>
-                </div>
+              </form>
+
+              <!-- User list table -->
+              <div id="users-table-container" style="overflow-x: auto;">
+                <table class="data-table" style="width: 100%; border-collapse: collapse;">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Role</th>
+                      <th>Registered</th>
+                      <th style="text-align: right;">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="users-table-body">
+                    <tr>
+                      <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading users...</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
 
-          <!-- Tab Card: User Access & Accounts (Admin Only) -->
-          <div class="card" id="user-management-card" style="margin-top: 1.5rem; display: none;">
-            <h2><i data-lucide="users" style="color:var(--accent);"></i> User Access & Accounts</h2>
-            <p class="subtitle">Add, edit, or remove users. Programmatic sharing coordinates spreadsheet and script permissions instantly.</p>
+          <!-- Tab Card: System & Deployment Information -->
+          <div class="card" style="margin-top: 1.5rem;">
+            <div class="accordion-header" onclick="toggleAccordion('sys-accordion-body', 'sys-accordion-icon')" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;">
+              <h2 style="margin: 0; display: flex; align-items: center; gap: 0.5rem; font-size: 1.25rem;">
+                <i data-lucide="info" style="color:var(--accent);"></i> System & Deployment Info
+              </h2>
+              <i data-lucide="chevron-down" id="sys-accordion-icon" class="accordion-chevron" style="transition: transform 0.2s ease;"></i>
+            </div>
             
-            <!-- User addition/editing form -->
-            <form id="user-form" onsubmit="event.preventDefault(); saveUserSubmit();" style="margin-bottom: 2rem; background: var(--bg); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border);">
-              <h3 id="user-form-title" style="margin-top: 0; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="user-plus" style="width:18px;height:18px;"></i> Add New User</h3>
-              <input type="hidden" id="user-edit-id" value="">
+            <div id="sys-accordion-body" style="display: none; margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1.25rem;">
+              <p class="subtitle" style="margin-top: 0;">Use these details if you need technical support or code updates pushed directly to your instance.</p>
               
-              <div class="grid-3">
-                <div class="field-group">
-                  <label for="user-input-name">Full Name *</label>
-                  <input id="user-input-name" type="text" placeholder="John Doe" required>
-                </div>
-                <div class="field-group">
-                  <label for="user-input-email">Gmail Address *</label>
-                  <input id="user-input-email" type="email" placeholder="john.doe@gmail.com" required>
-                </div>
-                <div class="field-group">
-                  <label for="user-input-role">Role *</label>
-                  <select id="user-input-role" required>
-                    <option value="User">User / Editor</option>
-                    <option value="Admin">Admin</option>
-                  </select>
+              <div class="card-sm-inset" style="padding: 1.25rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);">
+                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                  <div>
+                    <label class="label-inline" style="font-weight: 600; text-transform: uppercase; font-size: 0.72rem; color: var(--text-muted);">Script ID / Project ID</label>
+                    <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
+                      <input type="text" id="sys-script-id" readonly style="flex: 1; padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.85rem; background: #f8fafc;" value="Loading...">
+                      <button type="button" class="btn btn-secondary-soft btn-xs" onclick="copySystemField('sys-script-id')" style="padding: 0.5rem 0.75rem; height: 36px;">Copy</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="label-inline" style="font-weight: 600; text-transform: uppercase; font-size: 0.72rem; color: var(--text-muted);">Database Sheet ID</label>
+                    <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
+                      <input type="text" id="sys-sheet-id" readonly style="flex: 1; padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.85rem; background: #f8fafc;" value="Loading...">
+                      <button type="button" class="btn btn-secondary-soft btn-xs" onclick="copySystemField('sys-sheet-id')" style="padding: 0.5rem 0.75rem; height: 36px;">Copy</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="label-inline" style="font-weight: 600; text-transform: uppercase; font-size: 0.72rem; color: var(--text-muted);">Active Web App URL</label>
+                    <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
+                      <input type="text" id="sys-webapp-url" readonly style="flex: 1; padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.85rem; background: #f8fafc;" value="Loading...">
+                      <button type="button" class="btn btn-secondary-soft btn-xs" onclick="copySystemField('sys-webapp-url')" style="padding: 0.5rem 0.75rem; height: 36px;">Copy</button>
+                    </div>
+                  </div>
                 </div>
               </div>
-              
-              <div style="display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end;">
-                <button type="button" id="user-form-cancel" class="btn btn-secondary btn-sm" onclick="cancelUserEdit()" style="display: none;">Cancel</button>
-                <button type="submit" class="btn btn-primary btn-sm"><i data-lucide="save" style="width:14px;height:14px;"></i> Save Account</button>
-              </div>
-            </form>
-
-            <!-- User list table -->
-            <div id="users-table-container" style="overflow-x: auto;">
-              <table class="data-table" style="width: 100%; border-collapse: collapse;">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Registered</th>
-                    <th style="text-align: right;">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="users-table-body">
-                  <tr>
-                    <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading users...</td>
-                  </tr>
-                </tbody>
-              </table>
             </div>
           </div>
         </section>
