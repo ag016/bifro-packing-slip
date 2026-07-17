@@ -500,6 +500,17 @@ function hidePdfLoading() {
 function _setPrintBusy(buttonEl) { return _setButtonBusy(buttonEl, 'Generating PDF...'); }
 
 function printCurrentSlip() {
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  let pdfWindow = null;
+  if (!isMobile) {
+    pdfWindow = window.open('', '_blank');
+    if (pdfWindow) {
+      try {
+        pdfWindow.document.write('<html><head><title>Generating PDF...</title><style>body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #94a3b8; }</style></head><body><div>Generating PDF, please wait...</div></body></html>');
+      } catch(e) {}
+    }
+  }
+
   const restore = _setButtonBusy($('#btn-print-slip'), 'Generating PDF...');
   if (currentSlip) {
     let s = currentSlip;
@@ -507,28 +518,43 @@ function printCurrentSlip() {
       s = Object.assign({}, currentSlip, { invoiceNumbers: invoiceNumbers.slice() });
     }
     try {
-      generatePDFFromSlip(s, settings, restore);
+      generatePDFFromSlip(s, settings, restore, pdfWindow);
     } catch (e) {
+      if (pdfWindow) { try { pdfWindow.close(); } catch(err){} }
       restore();
       handleError(e);
     }
   } else {
+    if (pdfWindow) { try { pdfWindow.close(); } catch(err){} }
     restore();
     toast('No slip is currently loaded to print.', 'warning');
   }
 }
 
 function printSlipByCode(slipCode, anchorEl) {
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  let pdfWindow = null;
+  if (!isMobile) {
+    pdfWindow = window.open('', '_blank');
+    if (pdfWindow) {
+      try {
+        pdfWindow.document.write('<html><head><title>Generating PDF...</title><style>body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #94a3b8; }</style></head><body><div>Generating PDF, please wait...</div></body></html>');
+      } catch(e) {}
+    }
+  }
+
   const restore = _setButtonBusy(anchorEl, 'Generating PDF...');
   try {
     const s = slips.find(x => x.slipCode === slipCode);
     if (!s) {
+      if (pdfWindow) { try { pdfWindow.close(); } catch(err){} }
       restore();
       toast('Packing slip code ' + slipCode + ' not found.', 'danger');
       return;
     }
-    generatePDFFromSlip(s, settings, restore);
+    generatePDFFromSlip(s, settings, restore, pdfWindow);
   } catch (e) {
+    if (pdfWindow) { try { pdfWindow.close(); } catch(err){} }
     restore();
     handleError(e);
   }

@@ -4,7 +4,7 @@
  * Renders high-quality PDF downloads using jsPDF and AutoTable
  */
 
-function generatePDF(slip, settings) {
+function generatePDF(slip, settings, pdfWindow) {
   const { jsPDF } = window.jspdf;
   // A4 Page: 595.28 x 841.89 points
   const doc = new jsPDF('p', 'pt', 'a4');
@@ -383,16 +383,23 @@ function generatePDF(slip, settings) {
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
   if (isMobile) {
+    if (pdfWindow) { try { pdfWindow.close(); } catch(e){} }
     doc.save(fileName);
+  } else if (pdfWindow) {
+    try {
+      const blob = doc.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      pdfWindow.location.href = blobUrl;
+    } catch (e) {
+      console.warn('Could not load PDF in pre-opened tab, downloading:', e);
+      try { pdfWindow.close(); } catch(err){}
+      doc.save(fileName);
+    }
   } else {
     try {
       const blob = doc.output('blob');
       const blobUrl = URL.createObjectURL(blob);
       const newWindow = window.open(blobUrl, '_blank');
-      
-      // If the browser blocks the popup (newWindow is null/undefined or closed),
-      // we wait 1200ms before downloading as a fallback. This gives the user time
-      // to see/allow the popup blocker without immediately forcing a duplicate download.
       if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
         setTimeout(function() {
           doc.save(fileName);
@@ -413,7 +420,7 @@ function generatePDF(slip, settings) {
  * slip that may already carry `linkedStats` / `linkedOrderMeta`, in which
  * case we skip the server round trip and render immediately.
  */
-function generatePDFFromSlip(slip, settings, onRendered) {
+function generatePDFFromSlip(slip, settings, onRendered, pdfWindow) {
   function done() {
     // Always hide the page-wide loading overlay once PDF generation ends,
     // regardless of success or failure.
@@ -426,6 +433,7 @@ function generatePDFFromSlip(slip, settings, onRendered) {
   }
   
   function showRenderError(err) {
+    if (pdfWindow) { try { pdfWindow.close(); } catch(e){} }
     console.error('PDF Generation failed:', err);
     if (typeof toast === 'function') {
       toast('PDF Generation failed: ' + err.message, 'danger');
@@ -441,7 +449,7 @@ function generatePDFFromSlip(slip, settings, onRendered) {
       linkedOrderMeta: enrich.orderMeta || []
     });
     try { 
-      generatePDF(augmented, settings); 
+      generatePDF(augmented, settings, pdfWindow); 
     } catch (e) {
       showRenderError(e);
     } finally { 
@@ -461,7 +469,7 @@ function generatePDFFromSlip(slip, settings, onRendered) {
   if (!linkedIds.length || !slip.clientId) {
     // Not linked to any order: render straight away, no enrichment needed.
     try { 
-      generatePDF(slip, settings); 
+      generatePDF(slip, settings, pdfWindow); 
     } catch (e) {
       showRenderError(e);
     } finally { 
@@ -475,7 +483,7 @@ function generatePDFFromSlip(slip, settings, onRendered) {
       // Best-effort render with whatever enrichment the client already has,
       // so the user still gets a PDF even if the server round trip failed.
       try {
-        generatePDF(slip, settings);
+        generatePDF(slip, settings, pdfWindow);
       } catch (renderErr) {
         showRenderError(renderErr);
       } finally {
