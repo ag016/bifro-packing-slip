@@ -378,8 +378,26 @@ function generatePDF(slip, settings) {
   doc.text('Thank you for your business!', margin, pageH - 35);
   doc.text('Page 1 of 1', pageW - margin, pageH - 35, { align: 'right' });
 
-  // Download Action
-  doc.save('PackingSlip-' + slip.slipCode + '.pdf');
+  // Output Action: Open in new tab on desktop, download on mobile
+  const fileName = 'PackingSlip-' + slip.slipCode + '.pdf';
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+  if (isMobile) {
+    doc.save(fileName);
+  } else {
+    try {
+      const blob = doc.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      const newWindow = window.open(blobUrl, '_blank');
+      if (!newWindow) {
+        // If popup is blocked, fallback to standard download
+        doc.save(fileName);
+      }
+    } catch (e) {
+      console.warn('Could not open PDF in new tab, falling back to download:', e);
+      doc.save(fileName);
+    }
+  }
 }
 
 /**
