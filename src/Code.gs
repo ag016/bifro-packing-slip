@@ -1405,6 +1405,24 @@ function getSystemDeploymentInfo() {
   
   try {
     webAppUrl = ScriptApp.getService().getUrl();
+    if (webAppUrl && webAppUrl.indexOf('/macros/s/') !== -1 && webAppUrl.indexOf('/exec') !== -1) {
+      var sheet = getSheet(SHEETS.SETTINGS);
+      if (sheet) {
+        var existing = {};
+        var values = sheet.getDataRange().getValues();
+        for (var i = 0; i < values.length; i++) {
+          existing[values[i][0]] = i + 1;
+        }
+        if (existing['WebAppUrl']) {
+          var currentSaved = sheet.getRange(existing['WebAppUrl'], 2).getValue();
+          if (String(currentSaved).trim() !== String(webAppUrl).trim()) {
+            sheet.getRange(existing['WebAppUrl'], 2).setValue(webAppUrl);
+          }
+        } else {
+          sheet.appendRow(['WebAppUrl', webAppUrl]);
+        }
+      }
+    }
   } catch (e) {
     webAppUrl = 'Error: ' + e.message;
   }
