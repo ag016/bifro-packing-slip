@@ -1342,10 +1342,18 @@ function onOpen() {
  * Opens a modal dialog that automatically redirects to the deployed web app.
  */
 function showLaunchAppDialog() {
-  var url = ScriptApp.getService().getUrl();
+  var settings = getSettingsSheetValues();
+  var url = settings.WebAppUrl ? settings.WebAppUrl.trim() : '';
+  
   if (!url) {
+    url = ScriptApp.getService().getUrl();
+  }
+  
+  var isDevOrEditor = url && (url.indexOf('/macros/d/') !== -1 || url.indexOf('/edit') !== -1 || url.indexOf('/user') !== -1);
+  
+  if (!url || isDevOrEditor) {
     SpreadsheetApp.getUi().alert(
-      "Web App URL not found. Please deploy the script as a Web App (Deploy > New deployment > Web app) first."
+      "Web App URL is not set. Please deploy the script as a Web App (Deploy > New deployment), then paste and save the Web App URL in the Settings page of the application."
     );
     return;
   }

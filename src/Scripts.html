@@ -345,6 +345,7 @@ function loadSettings() {
       $('#company-name').value = settings.CompanyName || 'My Company';
       $('#company-address').value = settings.Address || '';
       $('#company-phone').value = settings.Phone || '';
+      $('#settings-webapp-url-input').value = settings.WebAppUrl || '';
       
       // Update brand images and text in UI
       updateLogoAndBrandUI(settings);
@@ -388,6 +389,7 @@ function saveSettings() {
   const compName = $('#company-name').value.trim();
   const compAddr = $('#company-address').value.trim();
   const compPhone = $('#company-phone').value.trim();
+  const webAppUrl = $('#settings-webapp-url-input').value.trim();
   
   if (!compName) {
     toast('Company Name is required.', 'danger');
@@ -398,7 +400,8 @@ function saveSettings() {
     CompanyName: compName,
     Address: compAddr,
     Phone: compPhone,
-    LogoBase64: window.logoUploadBase64 || ''
+    LogoBase64: window.logoUploadBase64 || '',
+    WebAppUrl: webAppUrl
   };
   
   const saveBtn = $('#settings button.btn-primary');
