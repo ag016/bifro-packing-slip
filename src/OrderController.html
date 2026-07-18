@@ -215,7 +215,10 @@ function renderOrders() {
           <button class="btn btn-secondary-soft btn-xs btn-icon-only dropdown-toggle" onclick="toggleRowDropdown(event, 'order-${o.id}')" title="Actions">
             <i data-lucide="more-horizontal" style="width: 14px; height: 14px;"></i>
           </button>
-          <div id="dropdown-order-${o.id}" class="dropdown-menu-content" style="display: none; position: absolute; right: 0; top: 100%; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); z-index: 50; min-width: 110px; margin-top: 4px;">
+          <div id="dropdown-order-${o.id}" class="dropdown-menu-content" style="display: none; position: absolute; right: 0; top: 100%; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); z-index: 50; min-width: 130px; margin-top: 4px;">
+            <button class="dropdown-item" onclick="createSlipFromOrder('${o.id}')" style="width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: transparent; border: none; font-size: 0.85rem; color: var(--accent); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+              <i data-lucide="file-plus" style="width: 14px; height: 14px; color: var(--accent);"></i> Create Slip
+            </button>
             <button class="dropdown-item" onclick="viewOrderById('${o.id}')" style="width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: transparent; border: none; font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
               <i data-lucide="eye" style="width: 14px; height: 14px;"></i> View
             </button>
@@ -704,4 +707,30 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+function createSlipFromOrder(orderId) {
+  const order = orders.find(o => o.id === orderId);
+  if (!order) {
+    toast('Order ' + orderId + ' not found.', 'danger');
+    return;
+  }
+  
+  // 1. Reset the slip form
+  if (typeof resetSlipForm === 'function') resetSlipForm();
+  
+  // 2. Select the client in the dropdown
+  const clientSelect = $('#slip-client');
+  if (clientSelect) {
+    clientSelect.value = order.clientId;
+    if (typeof handleSlipClientChange === 'function') handleSlipClientChange();
+  }
+  
+  // 3. Navigate to the new slip tab
+  if (typeof showPage === 'function') showPage('new-slip');
+  
+  // 4. Link the order (this fetches items and populates them automatically!)
+  if (typeof linkOrder === 'function') {
+    linkOrder(orderId);
+  }
+}
 </script>
