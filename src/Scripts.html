@@ -296,6 +296,58 @@ function initApp() {
       loadSuggestions(this.value);
     });
   }
+
+  // Quick Invoice tag adder (on Enter, comma, or blur)
+  const invoiceInput = $('#slip-invoice-quick');
+  if (invoiceInput) {
+    const commitInvoice = () => {
+      const v = invoiceInput.value.trim();
+      if (v) {
+        if (typeof addInvoiceNumberTag === 'function') {
+          if (addInvoiceNumberTag(v)) {
+            if (typeof renderInvoiceNumberTags === 'function') renderInvoiceNumberTags();
+          }
+        }
+        invoiceInput.value = '';
+      }
+    };
+    invoiceInput.addEventListener('keydown', function(event) {
+      if (event.key === 'Enter' || event.key === ',') {
+        event.preventDefault();
+        commitInvoice();
+      }
+    });
+    invoiceInput.addEventListener('blur', commitInvoice);
+  }
+
+  // Order Number auto-linker (on Enter or blur if matching an existing order ID)
+  const orderInput = $('#slip-order-number');
+  if (orderInput) {
+    const commitOrder = () => {
+      const v = orderInput.value.trim();
+      if (v) {
+        const normalized = v.toLowerCase();
+        // Look up in global orders array
+        const matched = (window.orders || []).find(o => {
+          const id = String(o.id || '').toLowerCase();
+          return id === normalized || id === 'o-' + normalized;
+        });
+        if (matched) {
+          if (typeof linkOrder === 'function') {
+            linkOrder(matched.id);
+            orderInput.value = matched.id;
+          }
+        }
+      }
+    };
+    orderInput.addEventListener('keydown', function(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        commitOrder();
+      }
+    });
+    orderInput.addEventListener('blur', commitOrder);
+  }
   
   // Slip listing live filters
   const searchEl = $('#filter-search');
