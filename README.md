@@ -65,3 +65,13 @@ clasp push
 2. **Server-Side Validation**: Sanitizes data on the Google Sheets backend to prevent empty item lists, invalid dates, negative quantities, or missing client names.
 3. **Dynamic Delivery Card in PDF**: Automatically sizes the shaded client delivery panel in the output PDF to adapt to the length of the shipping address, eliminating clipping and text-overlaps.
 4. **In-App Print Preview**: Before downloading, the view modal displays an exact visual facsimile of the printed packing slip, allowing checking of columns, addresses, and details on screen.
+
+---
+
+## License, trademarks, and security
+
+The application source is open under the [MIT License](LICENSE), so anyone can inspect what the software does and verify that the published code does not quietly send operating data to a Bifro application database.
+
+The MIT License covers the code, not the Bifro name, wordmark, logos, or product identity. Forks and commercial redistributions must follow the [Bifro trademark policy](TRADEMARK.md) and must not imply that they are official Bifro products.
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change. Suspected vulnerabilities should be reported privately using the process in [SECURITY.md](SECURITY.md), not posted as a public issue.
