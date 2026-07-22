@@ -16,7 +16,7 @@
   
   <!-- Inject verified script access context -->
   <script>
-    window.SERVER_ACCESS = <?!= JSON.stringify(access) ?>;
+    window.SERVER_ACCESS = <?!= accessJson ?>;
   </script>
   
   <!-- PDF Library CDNs -->
@@ -24,7 +24,7 @@
   <script src="https://unpkg.com/jspdf-autotable@3.5.31/dist/jspdf.plugin.autotable.min.js"></script>
   
   <!-- Lucide Icons CDN -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
   
   <!-- Include Stylesheet -->
   <?!= include('Styles'); ?>
@@ -306,7 +306,8 @@
                   <div class="field-group">
                     <label for="user-input-role">Role *</label>
                     <select id="user-input-role" required>
-                      <option value="User">User / Editor</option>
+                      <option value="User">Editor — create and update records</option>
+                      <option value="Viewer">Viewer — view and download only</option>
                       <option value="Admin">Admin</option>
                     </select>
                   </div>
@@ -341,7 +342,7 @@
           </div>
 
           <!-- Tab Card: System & Deployment Information -->
-          <div class="card" style="margin-top: 1.5rem;">
+          <div class="card" id="system-info-card" style="margin-top: 1.5rem; display: none;">
             <div class="accordion-header" onclick="toggleAccordion('sys-accordion-body', 'sys-accordion-icon')" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;">
               <h2 style="margin: 0; display: flex; align-items: center; gap: 0.5rem; font-size: 1.25rem;">
                 <i data-lucide="info" style="color:var(--accent);"></i> System & Deployment Info

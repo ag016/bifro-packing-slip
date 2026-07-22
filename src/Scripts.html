@@ -7,48 +7,7 @@
 // Utility Selectors
 const $ = sel => document.querySelector(sel);
 const $$ = sel => document.querySelectorAll(sel);
-
-// Dynamic proxy wrapper for google.script.run
-(function() {
-  if (typeof google !== 'undefined' && google.script && google.script.run) {
-    const originalRun = google.script.run;
-    function createRunner(successHandler, failureHandler) {
-      return new Proxy({}, {
-        get: function(target, prop) {
-          if (prop === 'withSuccessHandler') {
-            return function(onSuccess) {
-              return createRunner(onSuccess, failureHandler);
-            };
-          }
-          if (prop === 'withFailureHandler') {
-            return function(onFailure) {
-              return createRunner(successHandler, onFailure);
-            };
-          }
-          if (prop === 'withUserObject') {
-            return function() {
-              return createRunner(successHandler, failureHandler);
-            };
-          }
-          
-          return function() {
-            const args = Array.prototype.slice.call(arguments);
-            let runner = originalRun;
-            if (successHandler) runner = runner.withSuccessHandler(successHandler);
-            if (failureHandler) runner = runner.withFailureHandler(failureHandler);
-            
-            if (typeof runner[prop] === 'function') {
-              runner[prop].apply(runner, args);
-            } else {
-              runner.runCentral(prop, args);
-            }
-          };
-        }
-      });
-    }
-    google.script.run = createRunner(null, null);
-  }
-})();
+const actionValue = value => encodeURIComponent(String(value ?? '')).replace(/[!'()*]/g, char => '%' + char.charCodeAt(0).toString(16).toUpperCase());
 
 // Global State
 let settings = {};
@@ -157,7 +116,13 @@ function toast(msg, type = 'success') {
   if (type === 'warning') iconName = 'alert-circle';
   if (type === 'info') iconName = 'info';
   
-  t.innerHTML = `<i data-lucide="${iconName}" style="width:18px;height:18px;margin-right:8px;flex-shrink:0;"></i><span>${msg}</span>`;
+  t.replaceChildren();
+  const icon = document.createElement('i');
+  icon.dataset.lucide = iconName;
+  icon.style.cssText = 'width:18px;height:18px;margin-right:8px;flex-shrink:0;';
+  const toastMessage = document.createElement('span');
+  toastMessage.textContent = String(msg || '');
+  t.append(icon, toastMessage);
   if (window.lucide) lucide.createIcons();
   
   setTimeout(() => {
@@ -232,7 +197,10 @@ function showAccessDenied(email, message, authUrl) {
   
   const msgEl = $('#denied-message');
   if (message && msgEl) {
-    msgEl.innerHTML = `<p>${message}</p>`;
+    msgEl.replaceChildren();
+    const paragraph = document.createElement('p');
+    paragraph.textContent = String(message || '');
+    msgEl.appendChild(paragraph);
     msgEl.style.display = 'block';
   } else if (msgEl) {
     msgEl.innerHTML = '';
@@ -273,16 +241,14 @@ function setUserEmail(email, name) {
 function initApp() {
   // Bind Company settings forms
   loadSettings();
-  
-  // Admin checking for User Management panel
-  if (window.SERVER_ACCESS && window.SERVER_ACCESS.role === 'Admin') {
-    const userCard = $('#user-management-card');
-    if (userCard) userCard.style.display = 'block';
-    loadUsers();
-  } else {
-    const userCard = $('#user-management-card');
-    if (userCard) userCard.style.display = 'none';
-  }
+
+  const isAdmin = Boolean(window.SERVER_ACCESS && window.SERVER_ACCESS.role === 'Admin');
+  const userCard = $('#user-management-card');
+  const systemCard = $('#system-info-card');
+  if (userCard) userCard.style.display = isAdmin ? 'block' : 'none';
+  if (systemCard) systemCard.style.display = isAdmin ? 'block' : 'none';
+  if (isAdmin) loadUsers();
+  if (isAdmin) loadSystemDeploymentInfo();
   
   // Set default form triggers and loading
   loadClients(loadHome);
@@ -404,7 +370,6 @@ function loadSettings() {
     .withFailureHandler(handleError)
     .getSettings();
 
-  loadSystemDeploymentInfo();
 }
 
 function loadSystemDeploymentInfo() {
@@ -925,9 +890,11 @@ function renderUsers(users) {
   users.forEach(u => {
     const isSelf = u.email.toLowerCase() === window.SERVER_ACCESS.email.toLowerCase();
     const joinedDate = u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A';
-    const roleBadge = u.role === 'Admin' 
+    const roleBadge = u.role === 'Admin'
       ? '<span class="status-badge" style="background-color: var(--accent-soft); color: var(--accent); font-weight: 600; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">Admin</span>'
-      : '<span class="status-badge" style="background-color: var(--info-soft); color: var(--info); font-weight: 600; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">User</span>';
+      : u.role === 'Viewer'
+        ? '<span class="status-badge" style="background-color: var(--bg); color: var(--text-muted); font-weight: 600; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">Viewer</span>'
+        : '<span class="status-badge" style="background-color: var(--info-soft); color: var(--info); font-weight: 600; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">Editor</span>';
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -938,10 +905,10 @@ function renderUsers(users) {
       <td>${roleBadge}</td>
       <td style="color: var(--text-muted); font-size: 0.9rem;">${joinedDate}</td>
       <td style="text-align: right;">
-        <button class="btn btn-secondary btn-sm btn-icon-only" onclick='editUser(${JSON.stringify(u).replace(/'/g, "&apos;")})' title="Edit User" style="margin-right: 0.25rem;">
+        <button class="btn btn-secondary btn-sm btn-icon-only" onclick="editUserById('${actionValue(u.id)}')" title="Edit User" style="margin-right: 0.25rem;">
           <i data-lucide="edit-2" style="width:14px;height:14px;"></i>
         </button>
-        <button class="btn btn-secondary btn-sm btn-icon-only" onclick="deleteUserConfirm('${u.id}')" title="Delete User" ${isSelf ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>
+        <button class="btn btn-secondary btn-sm btn-icon-only" onclick="deleteUserConfirm(decodeURIComponent('${actionValue(u.id)}'))" title="Delete User" ${isSelf ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>
           <i data-lucide="trash-2" style="color: var(--danger); width:14px;height:14px;"></i>
         </button>
       </td>
@@ -968,7 +935,7 @@ function saveUserSubmit() {
   google.script.run
     .withSuccessHandler(function(savedUser) {
       if (savedUser.shareWarnings && savedUser.shareWarnings.length > 0) {
-        toast('User registered, but automated sharing failed: ' + savedUser.shareWarnings.join('; ') + '. Please share the Google Sheet and Script project manually.', 'danger');
+        toast('User registered, but Google Sheet sharing needs attention: ' + savedUser.shareWarnings.join('; ') + '. Please share the Sheet manually.', 'danger');
       } else {
         toast(id ? 'User updated successfully!' : 'User added and shared successfully!', 'success');
       }
@@ -988,12 +955,18 @@ function editUser(user) {
   const isSelf = user.email.toLowerCase() === window.SERVER_ACCESS.email.toLowerCase();
   $('#user-input-email').disabled = isSelf;
   $('#user-input-role').disabled = isSelf;
-  $('#user-input-role').value = user.role;
+  $('#user-input-role').value = user.role === 'Editor' ? 'User' : user.role;
 
   $('#user-form-title').innerHTML = '<i data-lucide="edit" style="width:18px;height:18px;"></i> Edit User Account';
   $('#user-form-cancel').style.display = 'inline-block';
   
   if (window.lucide) lucide.createIcons();
+}
+
+function editUserById(encodedUserId) {
+  const userId = decodeURIComponent(String(encodedUserId || ''));
+  const user = allUsers.find(item => String(item.id) === userId);
+  if (user) editUser(user);
 }
 
 function cancelUserEdit() {

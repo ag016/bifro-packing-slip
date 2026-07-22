@@ -11,8 +11,11 @@ The project has been organized into logical directories for clean file managemen
   * `Styles.html` – Redesigned stylesheet implementing the slate-and-gold design system.
   * `Scripts.html` – Core router, auth, and dashboard controllers.
   * `ClientController.html` – Client directory actions (registration, display).
+  * `OrderController.html` – Order entry, editing, filtering, and delivery status actions.
   * `SlipController.html` – Packing slip editor, visual print-preview, and filters.
+  * `InvoiceController.html` – Compatibility helpers for invoice-number workflows.
   * `PdfGenerator.html` – High-quality PDF rendering engine using jsPDF.
+  * `appsscript.json` – Apps Script runtime, web-app, and least-privilege scope configuration.
 
 ---
 
@@ -27,14 +30,19 @@ The project has been organized into logical directories for clean file managemen
    * Delete the default code inside `Code.gs`.
 3. **Copy files from `src/`**:
    * Create the corresponding files inside the Apps Script online editor (for `.gs` select Script, for `.html` select HTML). Name them exactly as in the `src/` folder:
-     1. `Code` (Script file) -> Copy from [Code.gs](file:///Users/akhilgupta/Desktop/Kodus/Packing%20Slip%20Software/app/src/Code.gs)
-     2. `index` (HTML file) -> Copy from [index.html](file:///Users/akhilgupta/Desktop/Kodus/Packing%20Slip%20Software/app/src/index.html)
-     3. `Styles` (HTML file) -> Copy from [Styles.html](file:///Users/akhilgupta/Desktop/Kodus/Packing%20Slip%20Software/app/src/Styles.html)
-     4. `Scripts` (HTML file) -> Copy from [Scripts.html](file:///Users/akhilgupta/Desktop/Kodus/Packing%20Slip%20Software/app/src/Scripts.html)
-     5. `ClientController` (HTML file) -> Copy from [ClientController.html](file:///Users/akhilgupta/Desktop/Kodus/Packing%20Slip%20Software/app/src/ClientController.html)
-     6. `SlipController` (HTML file) -> Copy from [SlipController.html](file:///Users/akhilgupta/Desktop/Kodus/Packing%20Slip%20Software/app/src/SlipController.html)
-     7. `PdfGenerator` (HTML file) -> Copy from [PdfGenerator.html](file:///Users/akhilgupta/Desktop/Kodus/Packing%20Slip%20Software/app/src/PdfGenerator.html)
-4. **Authorize & Deploy**:
+     1. `Code` (Script file) → [Code.gs](src/Code.gs)
+     2. `index` (HTML file) → [index.html](src/index.html)
+     3. `Styles` (HTML file) → [Styles.html](src/Styles.html)
+     4. `Scripts` (HTML file) → [Scripts.html](src/Scripts.html)
+     5. `ClientController` (HTML file) → [ClientController.html](src/ClientController.html)
+     6. `OrderController` (HTML file) → [OrderController.html](src/OrderController.html)
+     7. `SlipController` (HTML file) → [SlipController.html](src/SlipController.html)
+     8. `InvoiceController` (HTML file) → [InvoiceController.html](src/InvoiceController.html)
+     9. `PdfGenerator` (HTML file) → [PdfGenerator.html](src/PdfGenerator.html)
+4. **Apply the manifest**:
+   * In **Project Settings**, enable **Show `appsscript.json` manifest file in editor**.
+   * Replace its contents with [appsscript.json](src/appsscript.json).
+5. **Authorize & Deploy**:
    * Save the project (click the Floppy disk icon).
    * Run the `doGet` function once from the toolbar to authorize spreadsheet access.
    * Click **Deploy → New deployment**.

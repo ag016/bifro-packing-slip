@@ -18,6 +18,75 @@ const COUNTERS = {
   ORDER: 'orderCounter'
 };
 
+var READ_ROLES_ = ['Admin', 'User', 'Editor', 'Viewer'];
+var WRITE_ROLES_ = ['Admin', 'User', 'Editor'];
+
+function safeJsonForScript_(value) {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+function asSheetText_(value) {
+  if (value === null || value === undefined) return '';
+  var text = String(value);
+  return /^[=+\-@]/.test(text) ? "'" + text : text;
+}
+
+function requireAccess_(roles) {
+  var access = getUserAccess();
+  if (!access.access || roles.indexOf(access.role) === -1) {
+    throw new Error('Unauthorized: your account does not have permission for this action.');
+  }
+  return access;
+}
+
+function requireReadAccess_() { return requireAccess_(READ_ROLES_); }
+function requireWriteAccess_() { return requireAccess_(WRITE_ROLES_); }
+function requireAdminAccess_() { return requireAccess_(['Admin']); }
+
+function planUniqueUserIds_(values) {
+  var max = 0;
+  for (var i = 1; i < values.length; i++) {
+    var match = String(values[i][0] || '').match(/^U-(\d+)$/i);
+    if (match) max = Math.max(max, parseInt(match[1], 10));
+  }
+
+  var used = {};
+  var ids = [];
+  var changedRows = [];
+  for (var row = 1; row < values.length; row++) {
+    var id = String(values[row][0] || '').trim().toUpperCase();
+    if (!/^U-\d+$/.test(id) || used[id]) {
+      do {
+        max++;
+        id = 'U-' + String(max).padStart(4, '0');
+      } while (used[id]);
+      changedRows.push(row + 1);
+    }
+    used[id] = true;
+    ids.push(id);
+  }
+  return { ids: ids, changedRows: changedRows, max: max };
+}
+
+function repairUserIds_(sheet, values) {
+  var plan = planUniqueUserIds_(values);
+  plan.changedRows.forEach(function(sheetRow) {
+    sheet.getRange(sheetRow, 1).setValue(plan.ids[sheetRow - 2]);
+  });
+
+  var props = PropertiesService.getScriptProperties();
+  var propKey = 'counter_' + COUNTERS.USER;
+  var current = parseInt(props.getProperty(propKey) || '0', 10);
+  if (plan.max > current) props.setProperty(propKey, String(plan.max));
+
+  return plan.changedRows.length ? sheet.getDataRange().getValues() : values;
+}
+
 // Invoices are no longer first-class records. They live as comma-separated
 // "Invoice Numbers" string lists on Orders (column 8) and free-floating on
 // PackingSlips (column 11 + column 16). Helpers below normalize both.
@@ -112,6 +181,7 @@ function initSheet(sheet, name) {
  * Generates the next sequential ID thread-safely using LockService.
  */
 function getNextId(key, prefix) {
+  requireWriteAccess_();
   var lock = LockService.getScriptLock();
   try {
     // Wait for up to 15 seconds to acquire lock
@@ -217,11 +287,37 @@ function getUserAccess() {
   var usersSheet = getSheet(SHEETS.USERS);
   var usersData = usersSheet.getDataRange().getValues();
   
-  // If the sheet only has headers (empty user list), register current user as default Admin
+  // Only the spreadsheet owner can claim the first Admin account. A document
+  // lock makes this bootstrap deterministic when two people open the app at once.
   if (usersData.length <= 1) {
-    var ownerName = firstName + ' ' + (userEmail.split('@')[0].split(/[\._-]/)[1] || 'Admin');
-    usersSheet.appendRow(['U-0001', ownerName, userEmail, 'Admin', new Date().toISOString()]);
-    usersData = usersSheet.getDataRange().getValues(); // refresh data
+    var bootstrapLock = LockService.getDocumentLock();
+    bootstrapLock.waitLock(15000);
+    try {
+      usersData = usersSheet.getDataRange().getValues();
+      if (usersData.length <= 1) {
+        var owner = ss.getOwner();
+        var ownerEmail = owner && owner.getEmail ? String(owner.getEmail() || '').toLowerCase() : '';
+        if (!ownerEmail || ownerEmail !== userEmail.toLowerCase()) {
+          return { loggedIn: true, email: userEmail, name: firstName, access: false, role: 'Viewer', authUrl: authUrl, companyName: companyName, logoBase64: logoBase64, message: 'Initial setup must be completed by the Google Sheet owner.' };
+        }
+        var ownerName = firstName + ' ' + (userEmail.split('@')[0].split(/[\._-]/)[1] || 'Admin');
+        usersSheet.appendRow(['U-0001', asSheetText_(ownerName), userEmail, 'Admin', new Date().toISOString()]);
+        usersData = usersSheet.getDataRange().getValues();
+      }
+    } finally {
+      bootstrapLock.releaseLock();
+    }
+  }
+
+  // Repair IDs created by older versions where the bootstrap Admin and the
+  // next added user could both receive U-0001. This also synchronizes the ID
+  // counter so the issue cannot recur.
+  var userIdLock = LockService.getDocumentLock();
+  userIdLock.waitLock(15000);
+  try {
+    usersData = repairUserIds_(usersSheet, usersSheet.getDataRange().getValues());
+  } finally {
+    userIdLock.releaseLock();
   }
 
   // 3. Match user email in Users list
@@ -257,10 +353,7 @@ function getUserAccess() {
 }
 
 function getUsers() {
-  var callerAccess = getUserAccess();
-  if (!callerAccess.access || callerAccess.role !== 'Admin') {
-    throw new Error('Unauthorized access: Only Admins can manage users.');
-  }
+  requireAdminAccess_();
 
   var sheet = getSheet(SHEETS.USERS);
   var values = sheet.getDataRange().getValues();
@@ -280,39 +373,51 @@ function getUsers() {
 }
 
 function saveUser(user) {
+  requireAdminAccess_();
   var callerAccess = getUserAccess();
-  if (!callerAccess.access || callerAccess.role !== 'Admin') {
-    throw new Error('Unauthorized access: Only Admins can manage users.');
-  }
 
   if (!user || !user.name || !user.name.trim() || !user.email || !user.email.trim()) {
     throw new Error('User Name and Email are required.');
   }
 
   user.email = user.email.trim().toLowerCase();
+  var allowedRoles = ['Admin', 'User', 'Editor', 'Viewer'];
+  user.role = user.role || 'User';
+  if (allowedRoles.indexOf(user.role) === -1) throw new Error('Invalid user role.');
   var sheet = getSheet(SHEETS.USERS);
   var data = sheet.getDataRange().getValues();
 
-  var shareErrors = [];
-
-  // Try programmatically sharing spreadsheet and script project with the user
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    ss.addEditor(user.email);
-  } catch (e) {
-    shareErrors.push('Sheet sharing failed: ' + e.message);
+  if (user.id) {
+    var existingUser = null;
+    var adminCount = 0;
+    for (var u = 1; u < data.length; u++) {
+      if (String(data[u][3]) === 'Admin') adminCount++;
+      if (String(data[u][0]) === String(user.id)) existingUser = data[u];
+    }
+    if (!existingUser) throw new Error('User ID ' + user.id + ' not found.');
+    var isCaller = String(existingUser[2]).toLowerCase() === callerAccess.email.toLowerCase();
+    if (isCaller && (user.email !== String(existingUser[2]).toLowerCase() || user.role !== String(existingUser[3]))) {
+      throw new Error('You cannot change your own email address or administrator role.');
+    }
+    if (String(existingUser[3]) === 'Admin' && user.role !== 'Admin' && adminCount <= 1) {
+      throw new Error('At least one Admin account must remain.');
+    }
   }
 
+  var shareErrors = [];
+
+  // Share only the customer-controlled spreadsheet. Script-project access is
+  // not needed to use the web app and would require a broad Drive scope.
   try {
-    var scriptId = ScriptApp.getScriptId();
-    var scriptFile = DriveApp.getFileById(scriptId);
-    if (user.role === 'Admin') {
-      scriptFile.addEditor(user.email);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (user.role === 'Viewer') {
+      try { ss.removeEditor(user.email); } catch (removeError) {}
+      ss.addViewer(user.email);
     } else {
-      scriptFile.addViewer(user.email);
+      ss.addEditor(user.email);
     }
   } catch (e) {
-    shareErrors.push('Script sharing failed: ' + e.message);
+    shareErrors.push('Sheet sharing failed: ' + e.message);
   }
 
   if (user.id) {
@@ -321,7 +426,7 @@ function saveUser(user) {
     for (var i = 1; i < data.length; i++) {
       if (data[i][0] === user.id) {
         sheet.getRange(i + 1, 2, 1, 3).setValues([[
-          user.name,
+          asSheetText_(user.name),
           user.email,
           user.role || 'User'
         ]]);
@@ -342,7 +447,7 @@ function saveUser(user) {
     // Create new user record
     user.id = getNextId(COUNTERS.USER, 'U-');
     user.createdAt = new Date().toISOString();
-    sheet.appendRow([user.id, user.name, user.email, user.role || 'User', user.createdAt]);
+    sheet.appendRow([user.id, asSheetText_(user.name), user.email, user.role || 'User', user.createdAt]);
   }
   
   user.shareWarnings = shareErrors;
@@ -350,10 +455,8 @@ function saveUser(user) {
 }
 
 function deleteUser(userId) {
+  requireAdminAccess_();
   var callerAccess = getUserAccess();
-  if (!callerAccess.access || callerAccess.role !== 'Admin') {
-    throw new Error('Unauthorized access: Only Admins can manage users.');
-  }
 
   var sheet = getSheet(SHEETS.USERS);
   var data = sheet.getDataRange().getValues();
@@ -377,21 +480,21 @@ function deleteUser(userId) {
     throw new Error('You cannot delete your own administrator account.');
   }
 
-  // Attempt to revoke permissions from spreadsheet and script
+  var targetRole = data[foundIndex - 1][3];
+  if (targetRole === 'Admin') {
+    var remainingAdmins = 0;
+    for (var a = 1; a < data.length; a++) {
+      if (data[a][3] === 'Admin' && a + 1 !== foundIndex) remainingAdmins++;
+    }
+    if (remainingAdmins < 1) throw new Error('At least one Admin account must remain.');
+  }
+
+  // Attempt to revoke spreadsheet access. The app never grants script-project access.
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     ss.removeEditor(targetEmail);
   } catch (e) {
     Logger.log('Could not revoke spreadsheet editor: ' + e.message);
-  }
-
-  try {
-    var scriptId = ScriptApp.getScriptId();
-    var scriptFile = DriveApp.getFileById(scriptId);
-    scriptFile.removeEditor(targetEmail);
-    scriptFile.removeViewer(targetEmail);
-  } catch (e) {
-    Logger.log('Could not revoke script access: ' + e.message);
   }
 
   sheet.deleteRow(foundIndex);
@@ -412,11 +515,10 @@ function doGet(e) {
   var companyName = settings.CompanyName || 'Packing Slip Software';
   var access = getUserAccess();
   var template = HtmlService.createTemplateFromFile('index');
-  template.access = access;
+  template.accessJson = safeJsonForScript_(access);
   return template.evaluate()
     .setTitle(companyName + ' - Packing Slips')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0');
 }
 
 function getScriptUrl() {
@@ -458,10 +560,12 @@ function getAccess() {
 }
 
 function getSettings() {
+  requireReadAccess_();
   return getSettingsSheetValues();
 }
 
 function saveSettings(settings) {
+  requireAdminAccess_();
   if (!settings || !settings.CompanyName || !settings.CompanyName.trim()) {
     throw new Error('Company Name is required.');
   }
@@ -474,15 +578,16 @@ function saveSettings(settings) {
   }
   for (var key in settings) {
     if (existing[key]) {
-      sheet.getRange(existing[key], 2).setValue(settings[key]);
+      sheet.getRange(existing[key], 2).setValue(asSheetText_(settings[key]));
     } else {
-      sheet.appendRow([key, settings[key]]);
+      sheet.appendRow([key, asSheetText_(settings[key])]);
     }
   }
   return getSettingsSheetValues();
 }
 
 function getClients() {
+  requireReadAccess_();
   var sheet = getSheet(SHEETS.CLIENTS);
   var values = sheet.getDataRange().getValues();
   var clients = [];
@@ -502,6 +607,7 @@ function getClients() {
 }
 
 function saveClient(client) {
+  requireWriteAccess_();
   if (!client || !client.name || !client.name.trim()) {
     throw new Error('Client Name is required.');
   }
@@ -516,10 +622,10 @@ function saveClient(client) {
       if (data[i][0] === client.id) {
         // Update Columns: Name, Company, Phone, Address (columns 2 to 5, which is 1-indexed range of columns)
         sheet.getRange(i + 1, 2, 1, 4).setValues([[
-          client.name,
-          client.company || '',
-          client.phone || '',
-          client.address || ''
+          asSheetText_(client.name),
+          asSheetText_(client.company || ''),
+          asSheetText_(client.phone || ''),
+          asSheetText_(client.address || '')
         ]]);
         found = true;
         break;
@@ -532,7 +638,7 @@ function saveClient(client) {
     // Create new client
     client.id = getNextId(COUNTERS.CLIENT, 'C-');
     client.createdAt = new Date().toISOString();
-    sheet.appendRow([client.id, client.name, client.company || '', client.phone || '', client.address || '', client.createdAt]);
+    sheet.appendRow([client.id, asSheetText_(client.name), asSheetText_(client.company || ''), asSheetText_(client.phone || ''), asSheetText_(client.address || ''), client.createdAt]);
   }
   return client;
 }
@@ -581,6 +687,7 @@ function ensureOrdersHeader(sheet) {
 }
 
 function getPackingSlips() {
+  requireReadAccess_();
   var sheet = getSheet(SHEETS.PACKING_SLIPS);
   ensurePackingSlipsHeader(sheet);
   var values = sheet.getDataRange().getValues();
@@ -618,6 +725,7 @@ function getPackingSlips() {
 }
 
 function savePackingSlip(slip) {
+  requireWriteAccess_();
   if (!slip) {
     throw new Error('Packing slip data is empty.');
   }
@@ -646,17 +754,22 @@ function savePackingSlip(slip) {
   }
   slip.totalQuantity = totalQty;
 
+  var mutationLock = LockService.getDocumentLock();
+  mutationLock.waitLock(30000);
+  try {
   var sheet = getSheet(SHEETS.PACKING_SLIPS);
   var currentUser = getCurrentUserEmail();
   var originalCreatedBy = '';
+  var rowsToArchive = [];
 
   if (slip.slipCode) {
-    // If it's an edit, find the old active row(s) and rename their slipCode to archive them
+    // Locate the current row, but do not archive it until the replacement row
+    // has been written successfully.
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
       if (data[i][0] === slip.slipCode) {
         originalCreatedBy = data[i][12] || currentUser;
-        sheet.getRange(i + 1, 1).setValue(slip.slipCode + '-rev' + Date.now());
+        rowsToArchive.push(i + 1);
       }
     }
   } else {
@@ -688,22 +801,26 @@ function savePackingSlip(slip) {
   var invoiceNumbersPrimary = joinInvoiceNumberList(invoiceNumbers);
 
   sheet.appendRow([
-    slip.slipCode,
-    slip.date,
-    slip.clientId,
-    slip.clientName,
-    slip.clientCompany || '',
-    slip.clientPhone || '',
-    slip.clientAddress || '',
+    asSheetText_(slip.slipCode),
+    asSheetText_(slip.date),
+    asSheetText_(slip.clientId),
+    asSheetText_(slip.clientName),
+    asSheetText_(slip.clientCompany || ''),
+    asSheetText_(slip.clientPhone || ''),
+    asSheetText_(slip.clientAddress || ''),
     JSON.stringify(slip.items),
     slip.totalQuantity,
-    slip.notes || '',
-    invoiceNumbersPrimary,
+    asSheetText_(slip.notes || ''),
+    asSheetText_(invoiceNumbersPrimary),
     slip.createdAt,
-    slip.createdBy,
-    slip.editedBy,
-    orderStr
+    asSheetText_(slip.createdBy),
+    asSheetText_(slip.editedBy),
+    asSheetText_(orderStr)
   ]);
+
+  rowsToArchive.forEach(function(rowNumber) {
+    sheet.getRange(rowNumber, 1).setValue(asSheetText_(slip.slipCode + '-rev' + Date.now()));
+  });
 
   // Reflect the value we persisted onto the returned object so the client stays in sync.
   slip.invoiceNumber = invoiceNumbersPrimary;
@@ -717,9 +834,13 @@ function savePackingSlip(slip) {
   }
 
   return slip;
+  } finally {
+    mutationLock.releaseLock();
+  }
 }
 
 function getSuggestions(clientId) {
+  requireReadAccess_();
   if (!clientId) return [];
   var suggestions = {};
 
@@ -756,6 +877,7 @@ function getSuggestions(clientId) {
  * can quickly pick a known invoice number without re-typing it.
  */
 function getClientInvoiceNumbers(clientId) {
+  requireReadAccess_();
   var out = [];
   var seen = {};
   if (!clientId) return out;
@@ -790,6 +912,7 @@ function getClientInvoiceNumbers(clientId) {
 }
 
 function duplicateSlip(slipCode) {
+  requireReadAccess_();
   if (!slipCode) return null;
   var slips = getPackingSlips();
   for (var i = 0; i < slips.length; i++) {
@@ -808,6 +931,7 @@ function duplicateSlip(slipCode) {
  * ------------------------------------------------------------------ */
 
 function getOrders() {
+  requireReadAccess_();
   try {
     var sheet = getSheet(SHEETS.ORDERS);
     if (!sheet) {
@@ -864,9 +988,13 @@ function calculateStatusFromItems(items, defaultStatus) {
 }
 
 function saveOrder(order) {
+  requireWriteAccess_();
   if (!order) throw new Error('Order data is empty.');
   if (!order.clientId || !order.clientName) throw new Error('Client selection is required.');
 
+  var mutationLock = LockService.getDocumentLock();
+  mutationLock.waitLock(30000);
+  try {
   var sheet = getSheet(SHEETS.ORDERS);
   if (!sheet) throw new Error('Could not access or create the "Orders" sheet tab. Please make sure you have edit access to this spreadsheet.');
 
@@ -901,15 +1029,15 @@ function saveOrder(order) {
     var found = false;
     for (var i = 1; i < values.length; i++) {
       if (values[i][0] === order.id) {
-        sheet.getRange(i + 1, 2, 1, 6).setValues([[
-          order.date || '',
-          order.clientId,
-          order.clientName,
+        sheet.getRange(i + 1, 2, 1, 7).setValues([[
+          asSheetText_(order.date || ''),
+          asSheetText_(order.clientId),
+          asSheetText_(order.clientName),
           JSON.stringify(order.items || []),
           order.status,
-          order.createdAt
+          order.createdAt,
+          asSheetText_(invoiceNumbersStr)
         ]]);
-        sheet.getRange(i + 1, 8).setValue(invoiceNumbersStr);
         found = true;
         break;
       }
@@ -924,26 +1052,30 @@ function saveOrder(order) {
           throw new Error('Order Number ' + order.customId + ' already exists. Please choose a unique number.');
         }
       }
-      order.id = order.customId;
+      order.id = asSheetText_(order.customId);
     } else {
       order.id = getNextId(COUNTERS.ORDER, 'OR-');
     }
 
     sheet.appendRow([
       order.id,
-      order.date || '',
-      order.clientId,
-      order.clientName,
+      asSheetText_(order.date || ''),
+      asSheetText_(order.clientId),
+      asSheetText_(order.clientName),
       JSON.stringify(order.items || []),
       order.status,
       order.createdAt,
-      invoiceNumbersStr
+      asSheetText_(invoiceNumbersStr)
     ]);
   }
   return order;
+  } finally {
+    mutationLock.releaseLock();
+  }
 }
 
 function deleteOrder(orderId) {
+  requireWriteAccess_();
   if (!orderId) return false;
   var sheet = getSheet(SHEETS.ORDERS);
   var values = sheet.getDataRange().getValues();
@@ -967,6 +1099,7 @@ function deleteOrder(orderId) {
  * ------------------------------------------------------------------ */
 
 function getLinkedDeliveryStats(clientId, orderIds, excludeSlipCode) {
+  requireReadAccess_();
   // Clean IDs
   var targetOrders = [];
   if (orderIds) {
@@ -1032,6 +1165,7 @@ function getLinkedDeliveryStats(clientId, orderIds, excludeSlipCode) {
  * Order Date vs Dispatch Date display on the printed/preview packing slip.
  */
 function getLinkedOrderMetadata(orderIds) {
+  requireReadAccess_();
   var ids = [];
   if (orderIds) {
     if (Array.isArray(orderIds)) ids = orderIds;
@@ -1072,6 +1206,7 @@ function getLinkedOrderMetadata(orderIds) {
  *   double-counted as both this slip AND a previous one.
  */
 function getSlipPDFEnrichment(slip) {
+  requireReadAccess_();
   if (!slip) return { stats: {}, orderMeta: [] };
 
   var linkedIds = String(slip.linkedOrders || '')
@@ -1142,6 +1277,7 @@ function getSlipPDFEnrichment(slip) {
  * order statuses stay in sync with delivered quantities on linked slips.
  */
 function recalculateLinkedStatuses(orderIds) {
+  requireWriteAccess_();
   var targetOrders = [];
   if (orderIds) {
     if (Array.isArray(orderIds)) targetOrders = orderIds;
@@ -1214,13 +1350,6 @@ function recalculateLinkedStatuses(orderIds) {
   });
 }
 
-function runCentral(functionName, args) {
-  if (typeof globalThis[functionName] === 'function') {
-    return globalThis[functionName].apply(null, args || []);
-  }
-  throw new Error("Function " + functionName + " is not defined in Central Library.");
-}
-
 /**
  * Creates a custom menu in the Google Sheets interface on open.
  */
@@ -1235,6 +1364,7 @@ function onOpen() {
  * Opens a modal dialog that automatically redirects to the deployed web app.
  */
 function showLaunchAppDialog() {
+  requireReadAccess_();
   var settings = getSettingsSheetValues();
   var url = settings.WebAppUrl ? settings.WebAppUrl.trim() : '';
   
@@ -1284,6 +1414,7 @@ function showLaunchAppDialog() {
  * Returns technical metadata about the Google Sheets spreadsheet and script project.
  */
 function getSystemDeploymentInfo() {
+  requireAdminAccess_();
   var scriptId = 'N/A';
   var webAppUrl = 'N/A';
   var spreadsheetId = 'N/A';
