@@ -1,4 +1,4 @@
-name: Beta checks
+name: Open-source checks
 
 on:
   push:
